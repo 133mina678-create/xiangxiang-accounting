@@ -165,9 +165,39 @@ describe("真實 migration / PostgreSQL RPC", () => {
     const checks = await db.query<{ check_name: string; passed: boolean }>(
       await readFile("supabase/verify.sql", "utf8"),
     );
-    expect(checks.rows).toHaveLength(7);
+    expect(checks.rows).toHaveLength(8);
     for (const check of checks.rows)
       expect(check.passed, check.check_name).toBe(true);
+  });
+  it("authenticator 切換成 anon 後可提交延遲分攤 trigger", async () => {
+    const isolated = await database();
+    try {
+      let b = await read(isolated.db, isolated.secret);
+      const actor = b.members[0];
+      const event = b.events[0];
+      await isolated.db.exec(
+        "create role authenticator noinherit; grant anon to authenticator; set session authorization authenticator; set role anon;",
+      );
+      await change(isolated.db, isolated.secret, b.revision, actor.id, "expense.save", {
+        event_id: event.id,
+        date: event.start_date,
+        amount: 1,
+        payer_id: actor.id,
+        category: "other",
+        note: "延遲 trigger 權限測試",
+        mode: "equal",
+        splits: [{ member_id: actor.id }],
+      });
+      b = await read(isolated.db, isolated.secret);
+      expect(
+        b.expenses.some(
+          (expense) =>
+            expense.note === "延遲 trigger 權限測試" && expense.amount === 1,
+        ),
+      ).toBe(true);
+    } finally {
+      await isolated.db.close();
+    }
   });
   it("anon can edit with the secret and cannot edit without it", async () => {
     const b = await read(db, secret);

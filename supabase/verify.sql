@@ -21,5 +21,12 @@ select 'both RPCs have fixed search_path and definer security',
  (select count(*)=2 and bool_and(p.prosecdef and p.proconfig @> array['search_path=""'])
   from pg_proc p where p.oid in (to_regprocedure('public.read_book(text)'),to_regprocedure('public.change_book(text,integer,uuid,text,jsonb)')))
 union all
+select 'deferred split trigger is private and definer-secured',
+ (select p.prosecdef
+    and p.proconfig @> array['search_path=""']
+    and not has_function_privilege('anon',p.oid,'EXECUTE')
+    and not has_function_privilege('authenticated',p.oid,'EXECUTE')
+  from pg_proc p where p.oid=to_regprocedure('ledger.check_split_total()'))
+union all
 select 'internal tables are not in Realtime publications',
  not exists(select 1 from pg_publication_tables where schemaname='ledger');

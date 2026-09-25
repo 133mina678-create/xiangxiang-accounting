@@ -30,12 +30,13 @@ Project Settings → Integrations → GitHub：確認 repository 為 `133mina678
 
 1. `supabase/migrations/202609250001_ledger.sql`
 2. `supabase/migrations/202609260001_harden_api.sql`
+3. `supabase/migrations/202609260002_secure_deferred_trigger.sql`
 
 若開啟選項時程式已經推送，需重新觸發部署：在 GitHub 編輯此文件增加一個空行並 commit 到 main 即可。
 
-SQL Editor 執行 `supabase/verify.sql`，七列 `passed` 都應為 `true`。這支檔案只檢查，不修改帳目、不輸出秘密。
+SQL Editor 執行 `supabase/verify.sql`，八列 `passed` 都應為 `true`。這支檔案只檢查，不修改帳目、不輸出秘密。
 
-不要在整合已套用 migration 後再手動重跑原始建表 SQL。若想改用純 SQL Editor 手動建表，先停用自動 production 部署，再依順序執行兩個 migrations；往後恢復整合前必須使用 CLI migration repair 對齊歷史，不能只因資料表存在就假定 migration 已被記錄。
+不要在整合已套用 migration 後再手動重跑原始建表 SQL。若想改用純 SQL Editor 手動建表，先停用自動 production 部署，再依檔名順序執行全部 migrations；往後恢復整合前必須使用 CLI migration repair 對齊歷史，不能只因資料表存在就假定 migration 已被記錄。
 
 ## 3. 建立六人的共同帳本
 

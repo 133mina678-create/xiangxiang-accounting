@@ -48,7 +48,7 @@ PowerShell 複製環境檔：`Copy-Item .env.example .env.local`。開啟 `http:
 ## Supabase 設定與 migration
 
 1. 在自己的 Supabase 帳號建立專案，選擇鄰近地區（例如 Singapore）。
-2. 優先讓 GitHub integration（main、Working directory `.`、Deploy to production）依序套用 `supabase/migrations/` 中兩個 migration。或用已 link 的 CLI 執行 `supabase db push`。不要混用手動 SQL 與自動 migration；詳細步驟見 DEPLOY.md。
+2. 優先讓 GitHub integration（main、Working directory `.`、Deploy to production）依檔名順序套用 `supabase/migrations/` 中的 migrations。或用已 link 的 CLI 執行 `supabase db push`。不要混用手動 SQL 與自動 migration；詳細步驟見 DEPLOY.md。
 3. SQL Editor 執行 `supabase/seed.sql` **一次**。這會建立新帳本、六位固定成員及指定的「台北三天兩夜」Demo。結果表的 `secret_book_path` 是新帳本的秘密路徑，請妥善保存。
 4. 將路徑接在應用程式網域後，例如 `https://your-app.vercel.app/book/<64個隨機十六進位字元>`。
 5. Project Settings → API 取得 Project URL 與 publishable／anon key，填入 `.env.local` 及 Vercel 環境變數。
