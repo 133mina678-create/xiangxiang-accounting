@@ -3,12 +3,12 @@ import { configured } from "@/lib/api";
 export default function Home() {
   return (
     <main className="welcome">
-      <div className="brand-mark">香</div>
+      <div className="brand-mark">奶</div>
       <p className="eyebrow">一起出門，也一起算清楚</p>
-      <h1>香香的記帳本</h1>
+      <h1>我們的記帳本</h1>
       <p>今天又是誰先墊錢？</p>
       <div className="paper">
-        <span className="friends">🔥 ⭐ 💬 🦑 💎 🐰</span>
+        <span className="friends">🔥 ⭐ 💬 🦑 🥒 🐰</span>
         <h2>六個朋友，一本共同帳本。</h2>
         <p>使用群組裡的秘密帳本連結，就能一起記下每筆花費。</p>
         <p className="muted">

@@ -150,8 +150,8 @@ export default function Ledger({ secret }: { secret: string }) {
   if (!book)
     return (
       <main className="welcome">
-        <div className="brand-mark">香</div>
-        <h1>香香的記帳本</h1>
+        <div className="brand-mark">奶</div>
+        <h1>我們的記帳本</h1>
         <p role="status">{error || "正在打開共同帳本…"}</p>
         {error && (
           <button
@@ -284,9 +284,9 @@ export default function Ledger({ secret }: { secret: string }) {
       <div className="app-shell">
         <header className="topbar">
           <button className="brand" onClick={() => setEventId("")}>
-            <span className="brand-mark">香</span>
+            <span className="brand-mark">奶</span>
             <span>
-              香香的記帳本<small>今天又是誰先墊錢？</small>
+              我們的記帳本<small>今天又是誰先墊錢？</small>
             </span>
           </button>
           <div className="header-actions">
@@ -322,11 +322,7 @@ export default function Ledger({ secret }: { secret: string }) {
               <section className="home-heading">
                 <div>
                   <p className="eyebrow">OUR LITTLE ADVENTURES</p>
-                  <h1>
-                    好好玩，
-                    <br className="mobile-break" />
-                    帳一起算。
-                  </h1>
+                  <h1>我是奶龍</h1>
                   <p className="muted">把花費記下來，把時間留給朋友。</p>
                 </div>
                 <button
@@ -367,7 +363,7 @@ export default function Ledger({ secret }: { secret: string }) {
                 <p className="muted">結束的活動可以收進這裡，隨時回來看看。</p>
               )}
               <footer className="home-footer">
-                <span>🔥 ⭐ 💬 🦑 💎 🐰</span>
+                <span>🔥 ⭐ 💬 🦑 🥒 🐰</span>
                 <p>六個人，一本帳。每一筆都算得剛剛好。</p>
               </footer>
             </>

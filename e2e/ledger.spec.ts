@@ -16,7 +16,12 @@ test("手機完整流程、雙人同步、衝突、復原、自訂與份數、�
     if (m.type() === "error") console.log(m.text());
   });
   await page.goto(path);
+  await expect(
+    page.getByRole("dialog").getByRole("button", { name: "🥒 千瑾" }),
+  ).toBeVisible();
   await page.getByRole("dialog").getByRole("button", { name: "厚諾" }).click();
+  await expect(page.getByRole("heading", { name: "我是奶龍" })).toBeVisible();
+  await expect(page.getByText(/香{2}/)).toHaveCount(0);
   await page.getByRole("button", { name: /台北三天兩夜/ }).click();
   await expect(page.getByTestId("event-total")).toHaveText("NT$ 6,790");
   await page.screenshot({
