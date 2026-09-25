@@ -2,6 +2,10 @@
 
 現有程式不需要重建。Supabase GitHub 整合負責資料庫 migrations；Vercel 負責網站。連接 GitHub 不等於已建立資料表或已部署網站。
 
+## 0. 上傳已提交的程式
+
+本機已連接既有 repository 並保留其 main 歷史。在 PowerShell 執行 `git -C D:\xiangxiang-ledger push -u origin main`，依 Git Credential Manager 提示登入 GitHub。成功後 repository 應出現 `src`、`supabase`、`package.json` 等檔案。
+
 ## 1. 從 Supabase 複製兩個公開設定
 
 打開 `xiangxiang-accounting` → **Connect**，取得 Project URL；在 **Settings → API Keys** 取得 publishable key（`sb_publishable_…`）。舊版 anon key 也可使用。

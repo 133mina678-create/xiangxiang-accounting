@@ -11,3 +11,4 @@ playwright-report/
 supabase/.temp/
 supabase/.branches/
 .vercel/
+next-env.d.ts
