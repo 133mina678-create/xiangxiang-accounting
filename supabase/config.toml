@@ -1,0 +1,25 @@
+# Local project label, NOT a hosted Supabase project reference.
+# The GitHub integration selects the hosted project in the Supabase dashboard.
+project_id = "xiangxiang-accounting"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54322
+shadow_port = 54320
+major_version = 17
+
+[db.migrations]
+enabled = true
+schema_paths = []
+
+# Provision a book manually in SQL Editor to receive its secret link privately.
+# Do not emit a new secret book link in automated deployment logs.
+[db.seed]
+enabled = false
+sql_paths = ["./seed.sql"]
