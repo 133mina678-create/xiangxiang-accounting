@@ -322,10 +322,10 @@ describe("真實 migration / PostgreSQL RPC", () => {
       無語: ["808", "玉山銀行", "0381979312472"],
       庫莫: ["006", "合作金庫", "251899012944"],
       千瑾: ["700", "郵局", "01410091872553"],
-      兔子草: [null, null, null],
+      兔子草: ["700", "郵局", "00514060075399"],
     });
   });
-  it("銀行資料 migration 可安全重跑", async () => {
+  it("銀行資料 migrations 可安全重跑", async () => {
     await expect(
       db.exec(
         await readFile(
@@ -334,12 +334,20 @@ describe("真實 migration / PostgreSQL RPC", () => {
         ),
       ),
     ).resolves.toBeDefined();
+    await expect(
+      db.exec(
+        await readFile(
+          "supabase/migrations/202609260006_add_tuzicao_bank_details.sql",
+          "utf8",
+        ),
+      ),
+    ).resolves.toBeDefined();
     expect(
       (await read(db, secret)).members.find((m) => m.name === "兔子草"),
     ).toMatchObject({
-      bank_code: null,
-      bank_name: null,
-      bank_account: null,
+      bank_code: "700",
+      bank_name: "郵局",
+      bank_account: "00514060075399",
     });
   });
   it("匿名可以使用秘密 RPC，但不能存取或列出表格", async () => {

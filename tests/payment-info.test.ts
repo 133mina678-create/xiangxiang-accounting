@@ -13,7 +13,7 @@ const members: Member[] = [
   ["無語", "808", "玉山銀行", "0381979312472"],
   ["庫莫", "006", "合作金庫", "251899012944"],
   ["千瑾", "700", "郵局", "01410091872553"],
-  ["兔子草", null, null, null],
+  ["兔子草", "700", "郵局", "00514060075399"],
 ].map(([name, bank_code, bank_name, bank_account], position) => ({
   id: String(position),
   name: name!,
@@ -48,6 +48,7 @@ describe("結算匯款資訊", () => {
     ["星醬", "009", "61248603680100"],
     ["千瑾", "700", "01410091872553"],
     ["無語", "808", "0381979312472"],
+    ["兔子草", "700", "00514060075399"],
   ])("保留 %s 的銀行代碼與完整文字帳號", (name, code, account) => {
     const recipient = byName(name);
     expect(recipient.bank_code).toBe(code);
@@ -64,10 +65,13 @@ describe("結算匯款資訊", () => {
     expect(recipient.bank_account).toBe("078540354361");
   });
 
-  it("兔子草維持未設定狀態且不產生可複製內容", () => {
+  it("兔子草的帳號保留前導零並可供複製", () => {
     const recipient = byName("兔子草");
-    expect(hasBankDetails(recipient)).toBe(false);
-    expect(recipient.bank_account).toBeNull();
+    expect(hasBankDetails(recipient)).toBe(true);
+    expect(recipient.bank_code).toBe("700");
+    expect(recipient.bank_name).toBe("郵局");
+    expect(recipient.bank_account).toBe("00514060075399");
+    expect(maskBankAccount(recipient.bank_account!)).toBe("•••• •••• 5399");
   });
 
   it("附加銀行資料不改變最少轉帳演算法", () => {

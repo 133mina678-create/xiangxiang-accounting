@@ -4,7 +4,7 @@ begin;
 drop table if exists pg_temp.new_book_link;
 create temporary table new_book_link(path text) on commit preserve rows;
 do $$
-declare secret text:=encode(sha256(convert_to(gen_random_uuid()::text||gen_random_uuid()::text,'UTF8')),'hex'); w uuid; ids uuid[]; ev uuid:=gen_random_uuid(); i integer; names text[]:=array['厚諾','星醬','無語','庫莫','千瑾','兔子草']; icons text[]:=array['🔥','⭐','💬','🦑','🥒','🐰']; colors text[]:=array['#b65032','#8d6d13','#526d7e','#806198','#287b70','#af607e']; bank_codes text[]:=array['822','009','808','006','700',null]; bank_names text[]:=array['中國信託','彰化銀行','玉山銀行','合作金庫','郵局',null]; bank_accounts text[]:=array['078540354361','61248603680100','0381979312472','251899012944','01410091872553',null];
+declare secret text:=encode(sha256(convert_to(gen_random_uuid()::text||gen_random_uuid()::text,'UTF8')),'hex'); w uuid; ids uuid[]; ev uuid:=gen_random_uuid(); i integer; names text[]:=array['厚諾','星醬','無語','庫莫','千瑾','兔子草']; icons text[]:=array['🔥','⭐','💬','🦑','🥒','🐰']; colors text[]:=array['#b65032','#8d6d13','#526d7e','#806198','#287b70','#af607e']; bank_codes text[]:=array['822','009','808','006','700','700']; bank_names text[]:=array['中國信託','彰化銀行','玉山銀行','合作金庫','郵局','郵局']; bank_accounts text[]:=array['078540354361','61248603680100','0381979312472','251899012944','01410091872553','00514060075399'];
 begin
  insert into ledger.workspaces(secret_hash) values(sha256(convert_to(secret,'UTF8'))) returning id into w;
  for i in 1..6 loop
