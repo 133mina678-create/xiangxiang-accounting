@@ -207,7 +207,7 @@ test("手機完整流程、雙人同步、衝突、復原、自訂與份數、�
   await page.getByRole("button", { name: /台北三天兩夜/ }).click();
   await page.getByRole("button", { name: "最後怎麼付？", exact: true }).click();
   await expect(page.getByText("已確認", { exact: true })).toBeVisible();
-  // A recipient without bank details stays in settlement and has no copy action.
+  // 兔子草's newly supplied postal account is masked on screen and copied in full.
   await page.getByRole("button", { name: "所有活動", exact: true }).click();
   await page.getByRole("button", { name: "新增活動", exact: true }).click();
   await page.getByLabel("活動名稱").fill("兔子收款測試");
@@ -226,13 +226,16 @@ test("手機完整流程、雙人同步、衝突、復原、自訂與份數、�
     .click();
   await page.getByRole("button", { name: "儲存消費", exact: true }).click();
   await page.getByRole("button", { name: "最後怎麼付？", exact: true }).click();
-  const rabbitTransfer = page.getByTestId("transfer-card").filter({
-    hasText: "尚未提供匯款資料",
-  });
+  const rabbitTransfer = page
+    .getByTestId("transfer-card")
+    .filter({ hasText: "700 郵局" });
   await expect(rabbitTransfer).toContainText("兔子草");
-  await expect(
-    rabbitTransfer.getByRole("button", { name: /複製/ }),
-  ).toHaveCount(0);
+  await expect(rabbitTransfer).toContainText("•••• •••• 5399");
+  await expect(rabbitTransfer).not.toContainText("00514060075399");
+  await rabbitTransfer.getByRole("button", { name: "複製帳號" }).click();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
+    "00514060075399",
+  );
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= window.innerWidth,
