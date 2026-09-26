@@ -12,11 +12,49 @@ export function integer(value: unknown, min = 0, max = MAX_AMOUNT): number {
 }
 // BigInt is used for every multiplication/division in apportionment.
 // Ties follow canonical member order, never checkbox click order.
+export function splitEqualRotating(
+  amount: number,
+  ids: string[],
+  rotationOrder: string[],
+  rotationIndex = 0,
+): { splits: Split[]; nextRotationIndex: number } {
+  integer(amount, 1);
+  if (
+    !ids.length ||
+    new Set(ids).size !== ids.length ||
+    !rotationOrder.length ||
+    new Set(rotationOrder).size !== rotationOrder.length ||
+    ids.some((id) => !rotationOrder.includes(id))
+  )
+    throw new Error("請選擇不重複的分攤成員");
+  let cursor =
+    ((integer(rotationIndex, 0, Number.MAX_SAFE_INTEGER) % rotationOrder.length) +
+      rotationOrder.length) %
+    rotationOrder.length;
+  const participants = new Set(ids);
+  const base = Math.floor(amount / ids.length);
+  const splits = ids.map((member_id) => ({
+    member_id,
+    weight: 1,
+    share_amount: base,
+  }));
+  for (let extra = amount % ids.length; extra > 0; extra--) {
+    while (!participants.has(rotationOrder[cursor]))
+      cursor = (cursor + 1) % rotationOrder.length;
+    splits.find((split) => split.member_id === rotationOrder[cursor])!
+      .share_amount++;
+    cursor = (cursor + 1) % rotationOrder.length;
+  }
+  return { splits, nextRotationIndex: cursor };
+}
+
 export function splitAmount(
   amount: number,
   ids: string[],
   mode: Mode,
   values: Record<string, number> = {},
+  rotationOrder: string[] = ids,
+  rotationIndex = 0,
 ): Split[] {
   integer(amount, 1);
   if (!ids.length || new Set(ids).size !== ids.length)
@@ -33,11 +71,11 @@ export function splitAmount(
       throw new Error("自訂分攤合計必須等於消費金額");
     return result;
   }
-  if (mode !== "equal" && mode !== "weighted")
+  if (mode === "equal")
+    return splitEqualRotating(amount, ids, rotationOrder, rotationIndex).splits;
+  if (mode !== "weighted")
     throw new Error("不支援的分攤方式");
-  const weights = ids.map((id) =>
-    mode === "equal" ? 1 : integer(values[id], 1, 10000),
-  );
+  const weights = ids.map((id) => integer(values[id], 1, 10000));
   const total = weights.reduce((s, n) => s + BigInt(n), 0n);
   const result = ids.map((member_id, i) => ({
     member_id,

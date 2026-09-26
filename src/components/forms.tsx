@@ -259,6 +259,8 @@ export function ExpenseForm({
           integer(values[id] ?? "", mode === "weighted" ? 1 : 0),
         ]),
       ),
+      members.map((member) => member.id),
+      event.remainder_rotation_index ?? 0,
     );
   } catch (e) {
     validation = (e as Error).message;
@@ -475,8 +477,7 @@ export function ExpenseForm({
             preview.length > 0 &&
             Number(amount) % preview.length !== 0 && (
               <p className="hint">
-                因無法整除，系統自動分配 1 元尾差。以上列出的較高金額成員多負擔
-                1 元。
+                本筆無法整除的尾差已依成員公平輪替分配。
               </p>
             )}
           {mode === "weighted" && (

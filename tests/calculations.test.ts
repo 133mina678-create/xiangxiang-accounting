@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   integer,
   splitAmount,
+  splitEqualRotating,
   statistics,
   settle,
 } from "../src/lib/calculations";
@@ -37,6 +38,55 @@ describe("整數分攤", () => {
     expect(
       splitAmount(100, ids.slice(0, 3), "equal").map((s) => s.share_amount),
     ).toEqual([34, 33, 33]));
+  it("平均分攤尾差依 cursor 輪替且第四筆回到第一人", () => {
+    let cursor = 0;
+    const rounds = Array.from({ length: 4 }, () => {
+      const result = splitEqualRotating(100, ids.slice(0, 3), ids, cursor);
+      cursor = result.nextRotationIndex;
+      return result.splits.map((split) => split.share_amount);
+    });
+    expect(rounds).toEqual([
+      [34, 33, 33],
+      [33, 34, 33],
+      [33, 33, 34],
+      [34, 33, 33],
+    ]);
+  });
+  it("多個尾差、六人與部分參與者都接續輪替", () => {
+    let result = splitEqualRotating(101, ids.slice(0, 3), ids, 0);
+    expect(result.splits.map((split) => split.share_amount)).toEqual([
+      34, 34, 33,
+    ]);
+    result = splitEqualRotating(
+      101,
+      ids.slice(0, 3),
+      ids,
+      result.nextRotationIndex,
+    );
+    expect(result.splits.map((split) => split.share_amount)).toEqual([
+      34, 33, 34,
+    ]);
+    const six = splitEqualRotating(100, ids, ids, 0);
+    expect(six.splits.map((split) => split.share_amount)).toEqual([
+      17, 17, 17, 17, 16, 16,
+    ]);
+    expect(
+      splitEqualRotating(100, ["a", "d", "f"], ids, 1).splits.map(
+        (split) => split.share_amount,
+      ),
+    ).toEqual([33, 34, 33]);
+  });
+  it("整除不移動 cursor，且每次分攤總和守恆", () => {
+    const exact = splitEqualRotating(1800, ids, ids, 4);
+    expect(exact.nextRotationIndex).toBe(4);
+    for (const amount of [1, 2, 100, 101, 1800])
+      expect(
+        splitEqualRotating(amount, ["b", "d", "f"], ids, 5).splits.reduce(
+          (sum, split) => sum + split.share_amount,
+          0,
+        ),
+      ).toBe(amount);
+  });
   it("自訂金額及驗證", () => {
     expect(
       splitAmount(100, ["a", "b"], "custom", { a: 0, b: 100 }).map(

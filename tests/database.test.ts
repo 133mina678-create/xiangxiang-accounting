@@ -429,6 +429,104 @@ describe("真實 migration / PostgreSQL RPC", () => {
       b.expenses.find((x) => x.id === e.id)!.splits.map((s) => s.share_amount),
     ).toEqual([34, 33, 33]);
   });
+  it("活動 cursor 原子輪替尾差，歷史 split 固定且衝突寫入會被拒絕", async () => {
+    const isolated = await database();
+    try {
+      let book = await read(isolated.db, isolated.secret);
+      const event = book.events[0];
+      const participants = book.members.slice(0, 3).map((member) => member.id);
+      const payer = book.members[5].id;
+      const savedIds: string[] = [];
+      for (let round = 0; round < 4; round++) {
+        const id = crypto.randomUUID();
+        savedIds.push(id);
+        await change(
+          isolated.db,
+          isolated.secret,
+          book.revision,
+          book.members[0].id,
+          "expense.save",
+          {
+            id,
+            event_id: event.id,
+            date: event.start_date,
+            amount: 100,
+            payer_id: payer,
+            category: "other",
+            note: `輪替 ${round}`,
+            mode: "equal",
+            splits: participants.map((member_id) => ({ member_id })),
+          },
+        );
+        book = await read(isolated.db, isolated.secret);
+      }
+      expect(
+        savedIds.map((id) =>
+          book.expenses
+            .find((expense) => expense.id === id)!
+            .splits.map((split) => split.share_amount),
+        ),
+      ).toEqual([
+        [34, 33, 33],
+        [33, 34, 33],
+        [33, 33, 34],
+        [34, 33, 33],
+      ]);
+      const cursorBeforeExact = book.events[0].remainder_rotation_index;
+      await change(
+        isolated.db,
+        isolated.secret,
+        book.revision,
+        book.members[0].id,
+        "expense.save",
+        {
+          id: crypto.randomUUID(),
+          event_id: event.id,
+          date: event.start_date,
+          amount: 1800,
+          payer_id: payer,
+          category: "other",
+          note: "整除",
+          mode: "equal",
+          splits: book.members.map((member) => ({ member_id: member.id })),
+        },
+      );
+      book = await read(isolated.db, isolated.secret);
+      expect(book.events[0].remainder_rotation_index).toBe(cursorBeforeExact);
+      expect(
+        book.expenses
+          .find((expense) => expense.id === savedIds[0])!
+          .splits.map((split) => split.share_amount),
+      ).toEqual([34, 33, 33]);
+
+      const revision = book.revision;
+      const concurrent = ["同時 A", "同時 B"].map((note) =>
+        change(
+          isolated.db,
+          isolated.secret,
+          revision,
+          book.members[0].id,
+          "expense.save",
+          {
+            id: crypto.randomUUID(),
+            event_id: event.id,
+            date: event.start_date,
+            amount: 100,
+            payer_id: payer,
+            category: "other",
+            note,
+            mode: "equal",
+            splits: participants.map((member_id) => ({ member_id })),
+          },
+        ),
+      );
+      const results = await Promise.allSettled(concurrent);
+      expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+      expect(results.filter((result) => result.status === "rejected")).toHaveLength(1);
+    } finally {
+      await isolated.db.close();
+    }
+  });
   it("軟刪除 / 復原後守恆", async () => {
     let b = await read(db, secret);
     const e = b.expenses[0];

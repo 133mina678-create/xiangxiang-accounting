@@ -15,6 +15,7 @@ export type Event = {
   end_date: string | null;
   note: string;
   archived: boolean;
+  remainder_rotation_index: number;
   members: string[];
 };
 export type Split = { member_id: string; share_amount: number; weight: number };
