@@ -18,6 +18,40 @@ describe("真實 migration / PostgreSQL RPC", () => {
     expect(b.expenses).toHaveLength(4);
     expect(b.expenses.reduce((s, x) => s + x.amount, 0)).toBe(6790);
   });
+  it("migration 與 seed 以文字欄位保存銀行資料", async () => {
+    const b = await read(db, secret);
+    const bank = Object.fromEntries(
+      b.members.map((member) => [
+        member.name,
+        [member.bank_code, member.bank_name, member.bank_account],
+      ]),
+    );
+    expect(bank).toEqual({
+      厚諾: ["822", "中國信託", "078540354361"],
+      星醬: ["009", "彰化銀行", "61248603680100"],
+      無語: ["808", "玉山銀行", "0381979312472"],
+      庫莫: ["006", "合作金庫", "251899012944"],
+      千瑾: ["700", "郵局", "01410091872553"],
+      兔子草: [null, null, null],
+    });
+  });
+  it("銀行資料 migration 可安全重跑", async () => {
+    await expect(
+      db.exec(
+        await readFile(
+          "supabase/migrations/202609260004_member_bank_details.sql",
+          "utf8",
+        ),
+      ),
+    ).resolves.toBeDefined();
+    expect(
+      (await read(db, secret)).members.find((m) => m.name === "兔子草"),
+    ).toMatchObject({
+      bank_code: null,
+      bank_name: null,
+      bank_account: null,
+    });
+  });
   it("匿名可以使用秘密 RPC，但不能存取或列出表格", async () => {
     await db.exec("set role anon");
     try {
@@ -178,16 +212,23 @@ describe("真實 migration / PostgreSQL RPC", () => {
       await isolated.db.exec(
         "create role authenticator noinherit; grant anon to authenticator; set session authorization authenticator; set role anon;",
       );
-      await change(isolated.db, isolated.secret, b.revision, actor.id, "expense.save", {
-        event_id: event.id,
-        date: event.start_date,
-        amount: 1,
-        payer_id: actor.id,
-        category: "other",
-        note: "延遲 trigger 權限測試",
-        mode: "equal",
-        splits: [{ member_id: actor.id }],
-      });
+      await change(
+        isolated.db,
+        isolated.secret,
+        b.revision,
+        actor.id,
+        "expense.save",
+        {
+          event_id: event.id,
+          date: event.start_date,
+          amount: 1,
+          payer_id: actor.id,
+          category: "other",
+          note: "延遲 trigger 權限測試",
+          mode: "equal",
+          splits: [{ member_id: actor.id }],
+        },
+      );
       b = await read(isolated.db, isolated.secret);
       expect(
         b.expenses.some(

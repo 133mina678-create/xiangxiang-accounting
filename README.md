@@ -1,4 +1,4 @@
-# 我們的記帳本
+# 香香的記帳本
 
 **已有 Supabase / GitHub 專案：依 [正式上線步驟](DEPLOY.md) 完成部署。**
 
@@ -14,7 +14,7 @@
 
 ## 已實作功能
 
-活動建立／編輯／收藏、固定六人身份選擇、活動成員、跨日帳目、日期／付款人／分類篩選、消費新增／詳情／修改／軟刪除、12 秒 Undo、永久保留的回收區、平均／自訂／份數分攤、尾差預覽、每日與活動統計、最少筆數結算、已付款標記與撤銷、CSV 匯出、最近 100 筆修改紀錄。
+活動建立／編輯／收藏、固定六人身份選擇、活動成員、跨日帳目、日期／付款人／分類篩選、消費新增／詳情／修改／軟刪除、12 秒 Undo、永久保留的回收區、平均／自訂／份數分攤、尾差預覽、每日與活動統計、最少筆數結算、收款銀行末四碼與一鍵複製、已付款標記與撤銷、CSV 匯出、最近 100 筆修改紀錄。
 
 結束日期可省略；未設定時允許開始日期以後的任意日期。日期預設今天，但今天若超過活動範圍則移到最近的合法日期。活動是否進行中由使用者「移至過去活動」決定，不會午夜自動消失。每筆消費的付款人可不參與分攤。
 
@@ -82,6 +82,7 @@ PowerShell 複製環境檔：`Copy-Item .env.example .env.local`。開啟 `http:
 - RPC 是刻意設計的 `SECURITY DEFINER` 安全入口，`search_path=''` 且全部物件明確指定 schema。每次 mutation 驗證 workspace／event／actor／關聯成員並在單一 transaction 完成。
 - 前端身份只存在 localStorage，僅用於預設付款人和標記操作人。任何持有連結者均可選任何名字，**activity log 不是不可偽造的身份稽核**。
 - 設定 `Referrer-Policy: no-referrer`、禁止 iframe、`noindex`，無分析追蹤、第三方字型或第三方圖片。不將秘密寫入活動紀錄。
+- 銀行資料和帳本一起受秘密連結保護；畫面只顯示帳號末四碼，完整帳號僅在使用者按下複製時送進剪貼簿，不放入 URL、metadata、activity log 或瀏覽器 console。秘密連結持有人仍可透過受保護 RPC 取得帳本資料，因此連結不可公開。
 - 網址仍存在瀏覽器歷史、可能存在代管平台 request logs。若有不信任的共用裝置或公開分享連結，請更換秘密。僅「有網址即可編輯」的產品本身不能區分善意與惡意持有人。
 - 如需撤銷外流連結，在 SQL Editor 對目標 workspace 換掉 `secret_hash`，用新隨機秘密的 `sha256(convert_to(new_secret,'UTF8'))`；舊網址立即失效。不要透過匿名 API 開放輪替。
 - 沒有公開建立 workspace 的 API，可避免任意訪客濫建帳本；帳本一次性由管理者 SQL 建立，之後朋友可自行建立任意活動。
@@ -89,7 +90,7 @@ PowerShell 複製環境檔：`Copy-Item .env.example .env.local`。開啟 `http:
 
 ## 資料一致性與同步
 
-正規化資料表：`workspaces`、`members`、`events`、`event_members`、`expenses`、`expense_splits`、`settlements`、`activity_logs`。
+正規化資料表：`workspaces`、`members`、`events`、`event_members`、`expenses`、`expense_splits`、`settlements`、`activity_logs`。可選的銀行代碼、銀行名稱、銀行帳號存放在 `members.bank_code/bank_name/bank_account`；三者皆為 `text`，未提供時皆為 `null`，可保留前導零。
 
 所有金額為整數新台幣元。一筆消費上限 NT$100,000,000、必須大於 0；自訂個別分攤可為 0，份數為 1～10,000。前端使用安全整數與 BigInt 比例運算，SQL 使用 integer／bigint。
 
@@ -143,13 +144,13 @@ pnpm build
 
 `pnpm test` 不需要雲端憑證；會在隔離的 PGlite PostgreSQL 引擎執行正式 migration 與 seed，驗證 RPC、金額限制、錯誤 rollback、RLS／權限、soft delete／restore、衝突、轉帳。計算測試包含 1,000 組守恆案例。
 
-`pnpm test:e2e` 自動啟動 **僅限本機測試** 的 PostgreSQL HTTP adapter（127.0.0.1:54329）與 Next dev（127.0.0.1:3000），兩個 browser contexts 使用同一個真實 SQL 後端。測試完成後自動停止。adapter 位於 `scripts/test-server.mjs`，不在 Next 路由裡、不部署成公開 API、不使用 localStorage 存帳目。測試覆蓋手機輸入、桌面朋友看到變更、並行修改衝突、刪除 Undo、自訂驗證、份數、CSV、結清、重新整理後狀態、一人活動與橫向溢出。
+`pnpm test:e2e` 自動啟動 **僅限本機測試** 的 PostgreSQL HTTP adapter（127.0.0.1:54329）與 Next dev（127.0.0.1:3000），兩個 browser contexts 使用同一個真實 SQL 後端。測試完成後自動停止。adapter 位於 `scripts/test-server.mjs`，不在 Next 路由裡、不部署成公開 API、不使用 localStorage 存帳目。測試覆蓋手機輸入、桌面朋友看到變更、並行修改衝突、刪除 Undo、自訂驗證、份數、CSV、匯款資料遮罩與複製、未設定銀行資料、結清、重新整理後狀態、一人活動與橫向溢出。
 
 本機 SQL 測試不等於已驗證你的 Supabase 專案設定或 Vercel production 帳號；正式部署後仍需以實際網域做雙手機驗收。
 
 ## 日後新增／修改成員
 
-成員資料與顏色在資料庫，不硬編碼在 UI。用管理者 SQL 修改該 workspace 的 `ledger.members.name/icon/color` 即可，舊帳目保持以相同 UUID 關聯。`position` 決定顯示順序與尾差順序，不建議更動已使用的順序。
+成員資料、顏色與銀行資料在資料庫，不硬編碼在 UI。用管理者 SQL 修改該 workspace 的 `ledger.members.name/icon/color/bank_code/bank_name/bank_account` 即可，舊帳目保持以相同 UUID 關聯。銀行三欄需一起設定或一起設為 `null`，帳號必須用引號包住的文字。`position` 決定顯示順序與尾差順序，不建議更動已使用的順序。
 
 若要新增第七人，目前產品刻意限定六人，需同步調整 `change_book` 的 `members`／`splits` 長度上限，並重新評估精確結算搜尋的效能與測試。不要刪除已有消費／轉帳的成員；改名字不會斷開歷史關聯。活動可取消尚無歷史關聯的成員；回收區中的消費也會保留成員關聯，確保可復原。
 

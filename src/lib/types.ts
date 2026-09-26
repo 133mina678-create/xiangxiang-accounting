@@ -4,6 +4,9 @@ export type Member = {
   icon: string;
   color: string;
   position: number;
+  bank_code: string | null;
+  bank_name: string | null;
+  bank_account: string | null;
 };
 export type Event = {
   id: string;

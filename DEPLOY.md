@@ -31,6 +31,8 @@ Project Settings → Integrations → GitHub：確認 repository 為 `133mina678
 1. `supabase/migrations/202609250001_ledger.sql`
 2. `supabase/migrations/202609260001_harden_api.sql`
 3. `supabase/migrations/202609260002_secure_deferred_trigger.sql`
+4. `supabase/migrations/202609260003_update_branding_and_member_icon.sql`
+5. `supabase/migrations/202609260004_member_bank_details.sql`
 
 若開啟選項時程式已經推送，需重新觸發部署：在 GitHub 編輯此文件增加一個空行並 commit 到 main 即可。
 

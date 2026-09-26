@@ -3,9 +3,9 @@ import { configured } from "@/lib/api";
 export default function Home() {
   return (
     <main className="welcome">
-      <div className="brand-mark">奶</div>
+      <div className="brand-mark">香</div>
       <p className="eyebrow">一起出門，也一起算清楚</p>
-      <h1>我們的記帳本</h1>
+      <h1>香香的記帳本</h1>
       <p>今天又是誰先墊錢？</p>
       <div className="paper">
         <span className="friends">🔥 ⭐ 💬 🦑 🥒 🐰</span>

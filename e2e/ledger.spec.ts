@@ -16,12 +16,17 @@ test("手機完整流程、雙人同步、衝突、復原、自訂與份數、�
     if (m.type() === "error") console.log(m.text());
   });
   await page.goto(path);
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"], {
+    origin: "http://127.0.0.1:3000",
+  });
   await expect(
     page.getByRole("dialog").getByRole("button", { name: "🥒 千瑾" }),
   ).toBeVisible();
   await page.getByRole("dialog").getByRole("button", { name: "厚諾" }).click();
-  await expect(page.getByRole("heading", { name: "我是奶龍" })).toBeVisible();
-  await expect(page.getByText(/香{2}/)).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "奶蛋香香的" })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: /香香的記帳本/ }),
+  ).toBeVisible();
   await page.getByRole("button", { name: /台北三天兩夜/ }).click();
   await expect(page.getByTestId("event-total")).toHaveText("NT$ 6,790");
   await page.screenshot({
@@ -47,6 +52,20 @@ test("手機完整流程、雙人同步、衝突、復原、自訂與份數、�
     path: "test-results/desktop-ledger.png",
     fullPage: true,
   });
+  await friend
+    .getByRole("button", { name: "最後怎麼付？", exact: true })
+    .click();
+  await expect(friend.getByText("822 中國信託", { exact: true })).toBeVisible();
+  await friend.screenshot({
+    path: "test-results/desktop-settlement.png",
+    fullPage: true,
+  });
+  expect(
+    await friend.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+  await friend.getByRole("button", { name: "帳目", exact: true }).click();
   await page.getByRole("button", { name: "新增消費", exact: true }).click();
   await page.getByLabel("消費金額", { exact: true }).fill("100");
   await page.getByLabel("備註（選填）", { exact: true }).fill("測試點心");
@@ -105,6 +124,41 @@ test("手機完整流程、雙人同步、衝突、復原、自訂與份數、�
   expect((await download).suggestedFilename()).toContain("台北三天兩夜");
   // Finish all transfers; status survives a reload.
   await page.getByRole("button", { name: "最後怎麼付？", exact: true }).click();
+  const hounuoTransfer = page
+    .getByTestId("transfer-card")
+    .filter({ hasText: "822 中國信託" })
+    .first();
+  await expect(hounuoTransfer).toContainText("•••• •••• 4361");
+  await expect(hounuoTransfer).not.toContainText("078540354361");
+  await page.screenshot({
+    path: "test-results/mobile-settlement.png",
+    fullPage: true,
+  });
+  await hounuoTransfer.getByRole("button", { name: "複製帳號" }).click();
+  await expect(
+    hounuoTransfer.getByRole("button", { name: "已複製" }),
+  ).toBeVisible();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
+    "078540354361",
+  );
+  await expect(page.getByRole("status")).toContainText("已複製厚諾的匯款帳號");
+  await hounuoTransfer.getByRole("button", { name: "複製匯款資訊" }).click();
+  const hounuoAmount = await hounuoTransfer
+    .locator(".transfer-amount")
+    .innerText();
+  expect(
+    (await page.evaluate(() => navigator.clipboard.readText())).replaceAll(
+      "\r\n",
+      "\n",
+    ),
+  ).toBe(
+    `收款人：厚諾\n銀行：822 中國信託\n帳號：078540354361\n金額：${hounuoAmount}`,
+  );
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
   for (let i = 0; i < 6; i++) {
     const button = page.getByRole("button", { name: "✓ 已付款", exact: true });
     if ((await button.count()) === 0) break;
@@ -117,6 +171,37 @@ test("手機完整流程、雙人同步、衝突、復原、自訂與份數、�
   await page.getByRole("button", { name: /台北三天兩夜/ }).click();
   await page.getByRole("button", { name: "最後怎麼付？", exact: true }).click();
   await expect(page.getByText("本次活動已全部結清！")).toBeVisible();
+  // A recipient without bank details stays in settlement and has no copy action.
+  await page.getByRole("button", { name: "所有活動", exact: true }).click();
+  await page.getByRole("button", { name: "新增活動", exact: true }).click();
+  await page.getByLabel("活動名稱").fill("兔子收款測試");
+  for (const name of ["星醬", "無語", "庫莫", "千瑾"])
+    await page
+      .getByRole("dialog")
+      .getByRole("button", { name, exact: false })
+      .click();
+  await page.getByRole("button", { name: "建立活動", exact: true }).click();
+  await page.getByRole("button", { name: /兔子收款測試/ }).click();
+  await page.getByRole("button", { name: "新增消費", exact: true }).click();
+  await page.getByLabel("消費金額", { exact: true }).fill("100");
+  await page
+    .getByRole("group", { name: "誰先付款？" })
+    .getByRole("button", { name: /兔子草/ })
+    .click();
+  await page.getByRole("button", { name: "儲存消費", exact: true }).click();
+  await page.getByRole("button", { name: "最後怎麼付？", exact: true }).click();
+  const rabbitTransfer = page.getByTestId("transfer-card").filter({
+    hasText: "尚未提供匯款資料",
+  });
+  await expect(rabbitTransfer).toContainText("兔子草");
+  await expect(
+    rabbitTransfer.getByRole("button", { name: /複製/ }),
+  ).toHaveCount(0);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
   // New single-person event.
   await page.getByRole("button", { name: "所有活動", exact: true }).click();
   await page.getByRole("button", { name: "新增活動", exact: true }).click();

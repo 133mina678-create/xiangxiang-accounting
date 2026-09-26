@@ -20,9 +20,11 @@ import {
 } from "lucide-react";
 import { readBook, mutate } from "@/lib/api";
 import { settle, statistics } from "@/lib/calculations";
+import { transferRecipient } from "@/lib/payment-info";
 import { categories, money } from "@/lib/types";
 import type { Book, Event, Expense, Member } from "@/lib/types";
 import { EventForm, ExpenseForm, Modal, Person, FormError } from "./forms";
+import { TransferCard } from "./transfer-card";
 
 type Dialog =
   | { kind: "identity" }
@@ -150,8 +152,8 @@ export default function Ledger({ secret }: { secret: string }) {
   if (!book)
     return (
       <main className="welcome">
-        <div className="brand-mark">奶</div>
-        <h1>我們的記帳本</h1>
+        <div className="brand-mark">香</div>
+        <h1>香香的記帳本</h1>
         <p role="status">{error || "正在打開共同帳本…"}</p>
         {error && (
           <button
@@ -284,9 +286,9 @@ export default function Ledger({ secret }: { secret: string }) {
       <div className="app-shell">
         <header className="topbar">
           <button className="brand" onClick={() => setEventId("")}>
-            <span className="brand-mark">奶</span>
+            <span className="brand-mark">香</span>
             <span>
-              我們的記帳本<small>今天又是誰先墊錢？</small>
+              香香的記帳本<small>今天又是誰先墊錢？</small>
             </span>
           </button>
           <div className="header-actions">
@@ -322,7 +324,7 @@ export default function Ledger({ secret }: { secret: string }) {
               <section className="home-heading">
                 <div>
                   <p className="eyebrow">OUR LITTLE ADVENTURES</p>
-                  <h1>我是奶龍</h1>
+                  <h1>奶蛋香香的</h1>
                   <p className="muted">把花費記下來，把時間留給朋友。</p>
                 </div>
                 <button
@@ -682,37 +684,29 @@ export default function Ledger({ secret }: { secret: string }) {
                         完成以下 <b>{transfers.length}</b>{" "}
                         筆轉帳，即可結清本次活動。
                       </div>
-                      {transfers.map((t, i) => (
-                        <article
-                          className="transfer"
-                          key={`${t.from_id}-${t.to_id}`}
-                        >
-                          <span className="transfer-index">
-                            {String(i + 1).padStart(2, "0")}
-                          </span>
-                          <div className="transfer-people">
-                            <Person member={member(t.from_id)} />
-                            <ArrowRight size={19} />
-                            <Person member={member(t.to_id)} />
-                          </div>
-                          <strong>{money(t.amount)}</strong>
-                          <button
-                            className="secondary"
-                            disabled={busy}
-                            onClick={() =>
+                      {transfers.map((t, i) => {
+                        const recipient = transferRecipient(t, book.members);
+                        return (
+                          <TransferCard
+                            key={`${t.from_id}-${t.to_id}`}
+                            index={i}
+                            transfer={t}
+                            payer={member(t.from_id)}
+                            recipient={recipient}
+                            busy={busy}
+                            onFeedback={setNotice}
+                            onMarkPaid={() =>
                               setDialog({
                                 kind: "confirm",
                                 title: "確認已完成轉帳？",
-                                message: `${member(t.from_id).name} 已轉 ${money(t.amount)} 給 ${member(t.to_id).name}。這個按鈕只記錄付款狀態，不會實際匯款。`,
+                                message: `${member(t.from_id).name} 已轉 ${money(t.amount)} 給 ${recipient.name}。這個按鈕只記錄付款狀態，不會實際匯款。`,
                                 action: "payment.add",
                                 data: { event_id: event.id, ...t },
                               })
                             }
-                          >
-                            ✓ 已付款
-                          </button>
-                        </article>
-                      ))}
+                          />
+                        );
+                      })}
                     </>
                   ) : (
                     <div className="all-clear">
