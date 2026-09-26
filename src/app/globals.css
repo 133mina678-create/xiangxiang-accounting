@@ -1508,12 +1508,12 @@ body:has(dialog[open]) {
     grid-template-columns: 72px minmax(0, 1fr);
   }
   .bank-actions {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
+    display: block;
     margin-top: 13px;
   }
   .bank-actions .copy-button {
-    padding-inline: 8px;
+    width: 100%;
+    padding-inline: 12px;
   }
   .transfer .mark-paid {
     justify-self: stretch;

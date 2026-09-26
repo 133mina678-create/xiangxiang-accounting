@@ -24,16 +24,3 @@ export function hasBankDetails(
 export function maskBankAccount(account: string): string {
   return `•••• •••• ${account.slice(-4)}`;
 }
-
-export function transferDetailsText(
-  recipient: Member,
-  amount: number,
-): string | null {
-  if (!hasBankDetails(recipient)) return null;
-  return [
-    `收款人：${recipient.name}`,
-    `銀行：${recipient.bank_code} ${recipient.bank_name}`,
-    `帳號：${recipient.bank_account}`,
-    `金額：NT$ ${amount.toLocaleString("zh-TW")}`,
-  ].join("\n");
-}

@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   hasBankDetails,
   maskBankAccount,
-  transferDetailsText,
   transferRecipient,
 } from "../src/lib/payment-info";
 import { settle } from "../src/lib/calculations";
@@ -53,7 +52,7 @@ describe("結算匯款資訊", () => {
     const recipient = byName(name);
     expect(recipient.bank_code).toBe(code);
     expect(recipient.bank_account).toBe(account);
-    expect(transferDetailsText(recipient, 800)).toContain(`帳號：${account}`);
+    expect(typeof recipient.bank_account).toBe("string");
   });
 
   it("畫面遮罩只顯示末四碼，複製內容保留完整帳號與前導零", () => {
@@ -62,16 +61,13 @@ describe("結算匯款資訊", () => {
     expect(maskBankAccount(recipient.bank_account!)).not.toContain(
       recipient.bank_account!,
     );
-    expect(transferDetailsText(recipient, 800)).toBe(
-      "收款人：厚諾\n銀行：822 中國信託\n帳號：078540354361\n金額：NT$ 800",
-    );
+    expect(recipient.bank_account).toBe("078540354361");
   });
 
   it("兔子草維持未設定狀態且不產生可複製內容", () => {
     const recipient = byName("兔子草");
     expect(hasBankDetails(recipient)).toBe(false);
     expect(recipient.bank_account).toBeNull();
-    expect(transferDetailsText(recipient, 500)).toBeNull();
   });
 
   it("附加銀行資料不改變最少轉帳演算法", () => {

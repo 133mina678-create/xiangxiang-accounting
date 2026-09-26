@@ -3,16 +3,10 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowRight, Check, Copy } from "lucide-react";
 import { copyText } from "@/lib/clipboard";
-import {
-  hasBankDetails,
-  maskBankAccount,
-  transferDetailsText,
-} from "@/lib/payment-info";
+import { hasBankDetails, maskBankAccount } from "@/lib/payment-info";
 import { money } from "@/lib/types";
 import type { Member, Transfer } from "@/lib/types";
 import { Person } from "./forms";
-
-type CopyKind = "account" | "details" | null;
 
 export function TransferCard({
   index,
@@ -31,7 +25,7 @@ export function TransferCard({
   onMarkPaid: () => void;
   onFeedback: (message: string) => void;
 }) {
-  const [copied, setCopied] = useState<CopyKind>(null);
+  const [copied, setCopied] = useState(false);
   const resetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(
@@ -41,23 +35,18 @@ export function TransferCard({
     [],
   );
 
-  const copy = async (kind: Exclude<CopyKind, null>, text: string) => {
+  const copyAccount = async (account: string) => {
     try {
-      await copyText(text);
-      setCopied(kind);
-      onFeedback(
-        kind === "account"
-          ? `已複製${recipient.name}的匯款帳號`
-          : `已複製${recipient.name}的完整匯款資訊`,
-      );
+      await copyText(account);
+      setCopied(true);
+      onFeedback(`已複製${recipient.name}的匯款帳號`);
       if (resetTimer.current) clearTimeout(resetTimer.current);
-      resetTimer.current = setTimeout(() => setCopied(null), 1800);
+      resetTimer.current = setTimeout(() => setCopied(false), 1800);
     } catch {
       onFeedback("無法自動複製，請確認瀏覽器允許使用剪貼簿後重試");
     }
   };
 
-  const details = transferDetailsText(recipient, transfer.amount);
   return (
     <article
       className="transfer"
@@ -74,7 +63,7 @@ export function TransferCard({
       </div>
       <strong className="transfer-amount">{money(transfer.amount)}</strong>
 
-      {hasBankDetails(recipient) && details ? (
+      {hasBankDetails(recipient) ? (
         <div className="bank-panel">
           <div className="bank-details">
             <span>收款銀行</span>
@@ -90,18 +79,10 @@ export function TransferCard({
             <button
               className="secondary copy-button"
               type="button"
-              onClick={() => void copy("account", recipient.bank_account)}
+              onClick={() => void copyAccount(recipient.bank_account)}
             >
-              {copied === "account" ? <Check size={16} /> : <Copy size={16} />}
-              {copied === "account" ? "已複製" : "複製帳號"}
-            </button>
-            <button
-              className="secondary copy-button"
-              type="button"
-              onClick={() => void copy("details", details)}
-            >
-              {copied === "details" ? <Check size={16} /> : <Copy size={16} />}
-              {copied === "details" ? "已複製" : "複製匯款資訊"}
+              {copied ? <Check size={16} /> : <Copy size={16} />}
+              {copied ? "已複製" : "複製帳號"}
             </button>
           </div>
         </div>

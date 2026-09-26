@@ -142,18 +142,9 @@ test("手機完整流程、雙人同步、衝突、復原、自訂與份數、�
     "078540354361",
   );
   await expect(page.getByRole("status")).toContainText("已複製厚諾的匯款帳號");
-  await hounuoTransfer.getByRole("button", { name: "複製匯款資訊" }).click();
-  const hounuoAmount = await hounuoTransfer
-    .locator(".transfer-amount")
-    .innerText();
-  expect(
-    (await page.evaluate(() => navigator.clipboard.readText())).replaceAll(
-      "\r\n",
-      "\n",
-    ),
-  ).toBe(
-    `收款人：厚諾\n銀行：822 中國信託\n帳號：078540354361\n金額：${hounuoAmount}`,
-  );
+  await expect(
+    hounuoTransfer.getByRole("button", { name: "複製匯款資訊" }),
+  ).toHaveCount(0);
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= window.innerWidth,
