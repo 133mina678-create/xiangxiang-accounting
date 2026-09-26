@@ -34,9 +34,22 @@ export type Expense = {
 };
 export type Mode = "equal" | "custom" | "weighted";
 export type Transfer = { from_id: string; to_id: string; amount: number };
+export type SettlementStatus =
+  | "pending_payment"
+  | "awaiting_confirmation"
+  | "disputed"
+  | "confirmed"
+  | "auto_confirmed";
+export type ConfirmationMethod = "manual" | "auto" | "legacy" | null;
 export type Payment = Transfer & {
   id: string;
   event_id: string;
+  status: SettlementStatus;
+  paid_at: string | null;
+  confirmed_at: string | null;
+  disputed_at: string | null;
+  confirmation_method: ConfirmationMethod;
+  updated_at: string;
   created_at: string;
 };
 export type Log = {

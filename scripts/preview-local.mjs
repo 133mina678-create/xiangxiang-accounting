@@ -4,6 +4,8 @@ const env = {
   ...process.env,
   NEXT_PUBLIC_SUPABASE_URL: "http://127.0.0.1:54329",
   NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "local-test-publishable-key",
+  SUPABASE_SECRET_KEY: "local-test-server-secret-key",
+  CRON_SECRET: "local-test-cron-secret-at-least-32-characters",
 };
 const children = [];
 function start(args) {

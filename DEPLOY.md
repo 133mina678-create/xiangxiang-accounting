@@ -6,9 +6,9 @@
 
 本機已連接既有 repository 並保留其 main 歷史。在 PowerShell 執行 `git -C D:\xiangxiang-ledger push -u origin main`，依 Git Credential Manager 提示登入 GitHub。成功後 repository 應出現 `src`、`supabase`、`package.json` 等檔案。
 
-## 1. 從 Supabase 複製兩個公開設定
+## 1. 從 Supabase 取得公開與伺服器設定
 
-打開 `xiangxiang-accounting` → **Connect**，取得 Project URL；在 **Settings → API Keys** 取得 publishable key（`sb_publishable_…`）。舊版 anon key 也可使用。
+打開 `xiangxiang-accounting` → **Connect**，取得 Project URL；在 **Settings → API Keys** 取得 publishable key（`sb_publishable_…`）與 Secret key（`sb_secret_…`）。Secret key 只貼到 Vercel 的伺服器環境變數，絕對不要放進 `NEXT_PUBLIC_` 變數。
 
 Vercel → 專案 → Settings → Environment Variables：
 
@@ -16,9 +16,11 @@ Vercel → 專案 → Settings → Environment Variables：
 | -------------------------------------- | ------------------------------------- |
 | `NEXT_PUBLIC_SUPABASE_URL`             | Connect 顯示的 `https://…supabase.co` |
 | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | `sb_publishable_…` 或舊版 anon key    |
+| `SUPABASE_SECRET_KEY`                  | `sb_secret_…`，只供伺服器使用          |
+| `CRON_SECRET`                          | 自行產生至少 32 字元的隨機字串         |
 | `ENABLE_EXPERIMENTAL_COREPACK`         | `1`                                   |
 
-只需這三項。不需要資料庫密碼、service role、secret key、JWT secret 或登入設定。帳本秘密連結也不是環境變數。前兩項在建置時寫入前端，修改後要 Redeploy。
+不需要資料庫密碼、JWT signing secret 或登入設定。帳本秘密連結也不是環境變數。`SUPABASE_SECRET_KEY` 與 `CRON_SECRET` 只存在 Vercel server runtime，不會寫入前端 bundle；修改後要 Redeploy。
 
 本機開發才需要將 `.env.example` 複製成 `.env.local` 並填值；`.env.example` 保留範例，`.env.local` 不上傳 GitHub。
 
@@ -33,10 +35,11 @@ Project Settings → Integrations → GitHub：確認 repository 為 `133mina678
 3. `supabase/migrations/202609260002_secure_deferred_trigger.sql`
 4. `supabase/migrations/202609260003_update_branding_and_member_icon.sql`
 5. `supabase/migrations/202609260004_member_bank_details.sql`
+6. `supabase/migrations/202609260005_transfer_confirmation.sql`
 
 若開啟選項時程式已經推送，需重新觸發部署：在 GitHub 編輯此文件增加一個空行並 commit 到 main 即可。
 
-SQL Editor 執行 `supabase/verify.sql`，八列 `passed` 都應為 `true`。這支檔案只檢查，不修改帳目、不輸出秘密。
+SQL Editor 執行 `supabase/verify.sql`，所有 `passed` 都應為 `true`。這支檔案只檢查，不修改帳目、不輸出秘密。Storage 頁面會出現 private `transfer-proofs` bucket；不要切換為 public，也不要新增 anon 讀寫 policy。
 
 不要在整合已套用 migration 後再手動重跑原始建表 SQL。若想改用純 SQL Editor 手動建表，先停用自動 production 部署，再依檔名順序執行全部 migrations；往後恢復整合前必須使用 CLI migration repair 對齊歷史，不能只因資料表存在就假定 migration 已被記錄。
 
@@ -50,7 +53,7 @@ SQL Editor 執行 `supabase/verify.sql`，八列 `passed` 都應為 `true`。這
 
 Vercel → Add New → Project → Import `133mina678-create/xiangxiang-accounting`。Framework 選 **Next.js**，Root Directory 使用 repository 根目錄，Node.js **24.x**，Install Command 保留預設，Build Command **`pnpm build`**。
 
-加入第 1 步的三項環境變數（至少 Production；Preview 要使用時也加入），再按 Deploy。部署成功後，把 Vercel 網域和第 3 步的路徑接起來，就是六人共用的網址。
+加入第 1 步的五項環境變數（至少 Production；Preview 要使用時也加入），再按 Deploy。部署後在 Supabase SQL Editor 執行 `select public.configure_transfer_confirmation_cron('https://你的正式網域','與 Vercel 相同的 CRON_SECRET');`。它會把 URL 與 secret 加密存入 Vault，並建立 `0 * * * *` 的每小時 Supabase Cron。現有 Vercel Hobby 方案不支援每小時 Vercel Cron，因此排程刻意放在 Supabase。部署成功後，把 Vercel 網域和第 3 步的路徑接起來，就是六人共用的網址。
 
 ## 5. 確認資料共享
 

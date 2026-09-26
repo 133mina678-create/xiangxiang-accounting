@@ -738,7 +738,10 @@ select {
   grid-template-columns: auto minmax(0, 1fr) auto;
   grid-template-areas:
     "index people amount"
-    "index bank paid";
+    "index bank bank"
+    ". state state"
+    ". proof proof"
+    ". actions actions";
   align-items: center;
   gap: 16px 22px;
   padding: 24px;
@@ -771,12 +774,74 @@ select {
   white-space: nowrap;
   justify-self: end;
 }
-.transfer .mark-paid {
-  grid-area: paid;
-  font-size: 0.8rem;
-  padding: 10px 14px;
-  justify-self: end;
+.transfer-state {
+  grid-area: state;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 12px;
 }
+.transfer-state p { margin: 0; color: var(--muted); font-size: 0.82rem; }
+.transfer-action { min-height: 46px; }
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: #f0eee6;
+  color: #675f51;
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+.status-pill.awaiting_confirmation { background: #fff1cc; color: #765a12; }
+.status-pill.disputed { background: #fbe1da; color: #8e3d2e; }
+.status-pill.confirmed,
+.status-pill.auto_confirmed { background: #e3efe4; color: #386143; }
+.transfer.lifecycle { border-left: 4px solid #d4ca9d; }
+.transfer.lifecycle.disputed { border-left-color: #c7654f; }
+.transfer.lifecycle.confirmed,
+.transfer.lifecycle.auto_confirmed { border-left-color: #7ea184; }
+.transfer-state-detail {
+  grid-area: bank;
+  min-width: 0;
+  padding: 16px;
+  border-radius: 13px;
+  background: #f7f4ec;
+}
+.transfer-state-detail > p { margin: 10px 0 0; color: var(--muted); font-size: 0.86rem; }
+.transfer-times { display: flex; flex-wrap: wrap; gap: 12px 28px; margin: 14px 0 0; }
+.transfer-times div { min-width: 130px; }
+.transfer-times dt { color: var(--muted); font-size: 0.72rem; }
+.transfer-times dd {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 4px 0 0;
+  font-size: 0.83rem;
+  font-weight: 650;
+}
+.transfer-state-detail .dispute-message { color: #8e3d2e; font-weight: 650; }
+.transfer-state-detail .privacy-note { font-size: 0.75rem; }
+.proof-actions { grid-area: proof; }
+.proof-actions button,
+.recipient-actions button { min-height: 46px; }
+.recipient-actions {
+  grid-area: actions;
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+.secondary.warning { border-color: #d8a092; color: #8e3d2e; }
+.settlement-reminders { display: flex; flex-wrap: wrap; gap: 8px; margin: 18px 0; }
+.settlement-reminders span {
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: #f3efe4;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+.settlement-reminders .has-dispute { background: #fbe1da; color: #8e3d2e; }
 .bank-panel {
   grid-area: bank;
   min-width: 0;
@@ -865,6 +930,75 @@ select {
   font-size: 0.875rem;
   margin-top: 10px;
 }
+.all-clear.waiting { background: #f7f0d9; }
+.settlement-warning {
+  padding: 13px 15px;
+  border-radius: 12px;
+  background: #fff1cc;
+  color: #66501b;
+  font-size: 0.82rem;
+  line-height: 1.6;
+}
+.visually-hidden {
+  position: absolute !important;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.proof-transfer-summary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 9px;
+  padding: 13px 15px;
+  border-radius: 13px;
+  background: #f7f4ec;
+}
+.proof-transfer-summary > span { color: var(--muted); font-size: 0.78rem; }
+.proof-transfer-summary > strong { margin-left: auto; }
+.proof-picker {
+  width: 100%;
+  min-height: 150px;
+  margin: 16px 0;
+  border: 1.5px dashed #bcb39f;
+  border-radius: 15px;
+  background: #fbf8f0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  color: var(--ink);
+}
+.proof-picker span { color: var(--muted); font-size: 0.75rem; }
+.proof-preview { margin: 16px 0; }
+.proof-image-frame,
+.proof-viewer-frame {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+  border-radius: 13px;
+  background: #252525;
+}
+.proof-image-frame { height: min(42dvh, 400px); margin-bottom: 10px; }
+.proof-viewer-frame { height: min(70dvh, 650px); }
+.proof-image-frame img,
+.proof-viewer-frame img { object-fit: contain; }
+.privacy-inline {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 12px 0 18px;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+.proof-loading { padding: 45px 10px; text-align: center; color: var(--muted); }
+.form-error { color: #a43f31; font-size: 0.82rem; }
 .paid-row {
   display: flex;
   align-items: center;
@@ -1235,7 +1369,9 @@ body:has(dialog[open]) {
     grid-template-areas:
       "index people amount"
       "index bank bank"
-      ". paid paid";
+      ". state state"
+      ". proof proof"
+      ". actions actions";
     gap: 14px;
   }
   .event-grid:has(.event-card:only-child) {
@@ -1479,7 +1615,9 @@ body:has(dialog[open]) {
     grid-template-areas:
       "people amount"
       "bank bank"
-      "paid paid";
+      "state state"
+      "proof proof"
+      "actions actions";
     padding: 18px 14px;
     gap: 13px;
   }
@@ -1515,10 +1653,23 @@ body:has(dialog[open]) {
     width: 100%;
     padding-inline: 12px;
   }
-  .transfer .mark-paid {
-    justify-self: stretch;
+  .transfer-state,
+  .recipient-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .transfer-state .transfer-action,
+  .proof-actions button,
+  .recipient-actions button {
     width: 100%;
-    min-height: 44px;
+  }
+  .transfer-times {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+  .transfer-times div {
+    min-width: 0;
   }
   .paid-row {
     flex-wrap: wrap;

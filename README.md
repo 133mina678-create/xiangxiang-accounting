@@ -7,14 +7,15 @@
 ## 技術與架構
 
 - Next.js 16 App Router、React 19、TypeScript；使用語意 HTML、原生可存取 dialog、Lucide 圖示及自訂暖色 CSS。
-- Supabase PostgreSQL 是唯一正式資料來源。瀏覽器使用 publishable／anon key 呼叫兩個受秘密連結保護的 RPC。
-- Vercel 部署 Next.js。沒有服務端管理員金鑰、會員或 Supabase Auth。
+- Supabase PostgreSQL 是唯一正式資料來源。一般帳本操作由瀏覽器以 publishable／anon key 呼叫受秘密連結保護的 RPC。
+- 轉帳證明存入 Supabase Storage 的 private `transfer-proofs` bucket。Next.js Route Handler 使用僅存在 Vercel 伺服器環境的 Supabase Secret key 上傳、簽發 10 分鐘 signed URL 與刪除圖片；金鑰不會進入 client bundle。
+- Vercel 部署 Next.js。Supabase Cron 每小時呼叫一次受 `CRON_SECRET` 保護的自動確認端點；這符合現有 Vercel Hobby 方案的限制。沒有會員或 Supabase Auth。
 - Vitest 測試整數計算；PGlite 在真實 PostgreSQL 引擎執行正式 migration／seed／RPC；Playwright 測試兩個獨立瀏覽器的完整操作。
 - 為了讓可匿名使用的權限模型簡單可靠，採 **3 秒輪詢的近即時同步**，而非 Supabase Realtime 公開頻道。背景分頁暫停輪詢，回到頁面或網路恢復立即同步。六人小團體不需要維護 WebSocket token 簽發服務。介面會顯示同步／斷線狀態。
 
 ## 已實作功能
 
-活動建立／編輯／收藏、固定六人身份選擇、活動成員、跨日帳目、日期／付款人／分類篩選、消費新增／詳情／修改／軟刪除、12 秒 Undo、永久保留的回收區、平均／自訂／份數分攤、尾差預覽、每日與活動統計、最少筆數結算、收款銀行末四碼與一鍵複製、已付款標記與撤銷、CSV 匯出、最近 100 筆修改紀錄。
+活動建立／編輯／收藏、固定六人身份選擇、活動成員、跨日帳目、日期／付款人／分類篩選、消費新增／詳情／修改／軟刪除、12 秒 Undo、永久保留的回收區、平均／自訂／份數分攤、尾差預覽、每日與活動統計、最少筆數結算、收款銀行末四碼與一鍵複製、轉帳證明預覽／壓縮／私密上傳、收款確認／異議／重新上傳、72 小時自動確認、CSV 匯出、最近 100 筆修改紀錄。
 
 結束日期可省略；未設定時允許開始日期以後的任意日期。日期預設今天，但今天若超過活動範圍則移到最近的合法日期。活動是否進行中由使用者「移至過去活動」決定，不會午夜自動消失。每筆消費的付款人可不參與分攤。
 
@@ -41,9 +42,11 @@ PowerShell 複製環境檔：`Copy-Item .env.example .env.local`。開啟 `http:
 | -------------------------------------- | --------------------------------------------------------- |
 | `NEXT_PUBLIC_SUPABASE_URL`             | Supabase Project URL，例如 `https://abcdefgh.supabase.co` |
 | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Publishable key，或既有專案的 anon key                    |
+| `SUPABASE_SECRET_KEY`                  | Secret key，只能放在本機伺服器與 Vercel，不可公開          |
+| `CRON_SECRET`                          | 至少 32 字元的隨機字串，用來保護 Vercel Cron endpoint     |
 | `ENABLE_EXPERIMENTAL_COREPACK`         | Vercel 填 `1`，使用指定的 pnpm 版本                       |
 
-兩個值本來就適合公開前端使用。**不能填 service role key、secret key、資料庫密碼或 JWT signing key。** `.env.local` 已排除版本控制。環境變數在建置時寫入前端，Vercel 修改後必須重新部署。
+只有 `NEXT_PUBLIC_` 開頭的兩個值適合公開前端使用。`SUPABASE_SECRET_KEY` 與 `CRON_SECRET` 僅供伺服器 Route Handler 使用，禁止加入 `NEXT_PUBLIC_` 前綴、瀏覽器程式碼、log 或 repository。`.env.local` 已排除版本控制。Vercel 修改環境變數後必須重新部署。
 
 ## Supabase 設定與 migration
 
@@ -53,6 +56,7 @@ PowerShell 複製環境檔：`Copy-Item .env.example .env.local`。開啟 `http:
 4. 將路徑接在應用程式網域後，例如 `https://your-app.vercel.app/book/<64個隨機十六進位字元>`。
 5. Project Settings → API 取得 Project URL 與 publishable／anon key，填入 `.env.local` 及 Vercel 環境變數。
 6. Data API exposed schemas 只需預設 `public`；**不要 expose `ledger` schema**，不要替內部資料表新增公開 RLS policy。
+7. Migration `202609260005_transfer_confirmation.sql` 會建立 private `transfer-proofs` bucket、轉帳生命週期欄位與 proof 清理佇列。bucket 沒有 anon upload/read policy，所有圖片操作只經過伺服器。
 
 `supabase/config.toml` 已關閉自動 seed；production 的 API 設定仍須在控制台確認，`config.toml` 不會預設覆蓋 production API 設定。
 
@@ -65,7 +69,7 @@ PowerShell 複製環境檔：`Copy-Item .env.example .env.local`。開啟 `http:
 1. 將此資料夾作為獨立 Git repository 推到自己的 GitHub／GitLab。不要把整個磁碟根目錄上傳。
 2. Vercel → Add New Project → Import 該 repository，Framework 選 Next.js。
 3. Root Directory 使用本專案根目錄；Install Command 保留自動偵測，Build Command `pnpm build`，Node.js 選 24.x。
-4. 在 Production（必要時 Preview）加入前述兩個環境變數，另加入 `ENABLE_EXPERIMENTAL_COREPACK=1`，讓 Vercel 使用 package.json 指定的 pnpm 版本。
+4. 在 Production（必要時 Preview）加入前述四個環境變數，另加入 `ENABLE_EXPERIMENTAL_COREPACK=1`，讓 Vercel 使用 package.json 指定的 pnpm 版本。
 5. Deploy，取得網域，接上 Supabase seed 回傳的秘密路徑。
 6. 如果 Vercel 專案啟用了 Deployment Protection，正式群組使用的 Production 網域須允許朋友直接開啟；Preview 可以保留保護。
 7. 先在兩支手機開啟同一個完整連結：一支新增測試帳，另一支應在約 3 秒內看見。新增／修改／刪除後檢查統計與結算，再開始使用。
@@ -81,8 +85,10 @@ PowerShell 複製環境檔：`Copy-Item .env.example .env.local`。開啟 `http:
 - 所有資料在 `ledger` 私有 schema；所有表啟用 RLS，無公開 policy，且撤銷匿名表格／內部函式權限。沒有「列出所有帳本」API。
 - RPC 是刻意設計的 `SECURITY DEFINER` 安全入口，`search_path=''` 且全部物件明確指定 schema。每次 mutation 驗證 workspace／event／actor／關聯成員並在單一 transaction 完成。
 - 前端身份只存在 localStorage，僅用於預設付款人和標記操作人。任何持有連結者均可選任何名字，**activity log 不是不可偽造的身份稽核**。
+- 轉帳確認同樣只使用這個可切換身份做協作 UX；它不是金融級身份驗證或金融級付款證明系統。持有秘密連結者仍可能切換成付款人或收款人。
 - 設定 `Referrer-Policy: no-referrer`、禁止 iframe、`noindex`，無分析追蹤、第三方字型或第三方圖片。不將秘密寫入活動紀錄。
 - 銀行資料和帳本一起受秘密連結保護；畫面只顯示帳號末四碼，完整帳號僅在使用者按下複製時送進剪貼簿，不放入 URL、metadata、activity log 或瀏覽器 console。秘密連結持有人仍可透過受保護 RPC 取得帳本資料，因此連結不可公開。
+- 轉帳證明只存在 private bucket，帳本 snapshot 永遠排除 Storage path。付款雙方查看時由伺服器驗證秘密連結與協作身份，再建立 10 分鐘 signed URL；proof path 不放入 app query string、activity log、analytics 或 console。手動／自動確認後不保留圖片。
 - 網址仍存在瀏覽器歷史、可能存在代管平台 request logs。若有不信任的共用裝置或公開分享連結，請更換秘密。僅「有網址即可編輯」的產品本身不能區分善意與惡意持有人。
 - 如需撤銷外流連結，在 SQL Editor 對目標 workspace 換掉 `secret_hash`，用新隨機秘密的 `sha256(convert_to(new_secret,'UTF8'))`；舊網址立即失效。不要透過匿名 API 開放輪替。
 - 沒有公開建立 workspace 的 API，可避免任意訪客濫建帳本；帳本一次性由管理者 SQL 建立，之後朋友可自行建立任意活動。
@@ -90,7 +96,7 @@ PowerShell 複製環境檔：`Copy-Item .env.example .env.local`。開啟 `http:
 
 ## 資料一致性與同步
 
-正規化資料表：`workspaces`、`members`、`events`、`event_members`、`expenses`、`expense_splits`、`settlements`、`activity_logs`。可選的銀行代碼、銀行名稱、銀行帳號存放在 `members.bank_code/bank_name/bank_account`；三者皆為 `text`，未提供時皆為 `null`，可保留前導零。
+正規化資料表：`workspaces`、`members`、`events`、`event_members`、`expenses`、`expense_splits`、`settlements`、`activity_logs`、`proof_cleanup_queue`。可選的銀行代碼、銀行名稱、銀行帳號存放在 `members.bank_code/bank_name/bank_account`；三者皆為 `text`，未提供時皆為 `null`，可保留前導零。
 
 所有金額為整數新台幣元。一筆消費上限 NT$100,000,000、必須大於 0；自訂個別分攤可為 0，份數為 1～10,000。前端使用安全整數與 BigInt 比例運算，SQL 使用 integer／bigint。
 
@@ -116,7 +122,11 @@ PowerShell 複製環境檔：`Copy-Item .env.example .env.local`。開啟 `http:
 
 `剩餘淨額 = 淨額 + 已轉出 − 已轉入`。結算頁以剩餘淨額運算。六人中搜尋所有可清除至少一方餘額的債務人／債權人配對，選擇轉帳筆數最少的方案（最多 5 筆；全員為零則 0 筆）。六人規模可精確搜尋，不需只依最大餘額貪婪配對。
 
-每次標記已付款記成一筆實際轉帳；伺服器檢查金額正數、不超過雙方目前應付／應收。它不會真的匯款。刪除或修改舊消費不會清除已付轉帳，若有人超付會提出退還方案。可取消誤標的付款。
+尚未付款的建議仍由原演算法即時計算。付款人提交一張證明後才建立 settlement row；伺服器檢查金額正數、不超過雙方目前應付／應收，並用 revision 防止重複提交。狀態依序為 `awaiting_confirmation`、`disputed`、`confirmed` 或 `auto_confirmed`。有異議的交易永遠不會自動確認。
+
+`paid_at + 72 hours` 是唯一自動確認期限。Supabase Cron 依 `0 * * * *` 每小時透過 `pg_net` 呼叫受 Bearer secret 保護的伺服器端點；URL 與 secret 加密存放在 Supabase Vault。資料庫函式只更新仍為 `awaiting_confirmation` 的到期 row，因此可重複執行。確認時先清空 proof path 並寫入清理佇列，再嘗試刪除 Storage object；失敗會保留在 queue，由後續排程重試。重新上傳、刪除 settlement 或硬刪除活動也使用同一清理機制。
+
+修改或刪除舊消費不會覆蓋已開始／已完成交易。原金額與歷史永久保留；若重算後有人多付，演算法會另列調整轉帳，表單也會顯示對帳提醒。
 
 ### Demo 預期結果
 
@@ -142,9 +152,9 @@ pnpm test:e2e
 pnpm build
 ```
 
-`pnpm test` 不需要雲端憑證；會在隔離的 PGlite PostgreSQL 引擎執行正式 migration 與 seed，驗證 RPC、金額限制、錯誤 rollback、RLS／權限、soft delete／restore、衝突、轉帳。計算測試包含 1,000 組守恆案例。
+`pnpm test` 不需要雲端憑證；會在隔離的 PGlite PostgreSQL 引擎執行正式 migration 與 seed，驗證 RPC、金額限制、錯誤 rollback、RLS／權限、soft delete／restore、衝突、轉帳狀態、72 小時到期、異議、重傳、冪等排程與 proof cleanup。計算測試包含 1,000 組守恆案例。
 
-`pnpm test:e2e` 自動啟動 **僅限本機測試** 的 PostgreSQL HTTP adapter（127.0.0.1:54329）與 Next dev（127.0.0.1:3000），兩個 browser contexts 使用同一個真實 SQL 後端。測試完成後自動停止。adapter 位於 `scripts/test-server.mjs`，不在 Next 路由裡、不部署成公開 API、不使用 localStorage 存帳目。測試覆蓋手機輸入、桌面朋友看到變更、並行修改衝突、刪除 Undo、自訂驗證、份數、CSV、匯款資料遮罩與複製、未設定銀行資料、結清、重新整理後狀態、一人活動與橫向溢出。
+`pnpm test:e2e` 自動啟動 **僅限本機測試** 的 PostgreSQL／private Storage HTTP adapter（127.0.0.1:54329）與 Next dev（127.0.0.1:3000），兩個 browser contexts 使用同一個真實 SQL 後端。測試完成後自動停止。adapter 位於 `scripts/test-server.mjs`，不在 Next 路由裡、不部署成公開 API、不使用 localStorage 存帳目。測試覆蓋手機輸入、桌面朋友看到變更、並行修改衝突、刪除 Undo、自訂驗證、份數、CSV、匯款資料遮罩與複製、圖片預覽／上傳／查看、異議、重新上傳、手動確認、未設定銀行資料、一人活動與橫向溢出。
 
 本機 SQL 測試不等於已驗證你的 Supabase 專案設定或 Vercel production 帳號；正式部署後仍需以實際網域做雙手機驗收。
 
@@ -158,9 +168,13 @@ pnpm build
 
 - [Supabase Database Functions](https://supabase.com/docs/guides/database/functions)
 - [Supabase RLS](https://supabase.com/docs/guides/database/postgres/row-level-security)
+- [Supabase Storage access control](https://supabase.com/docs/guides/storage/security/access-control)
+- [Supabase signed URLs](https://supabase.com/docs/reference/javascript/storage-from-createsignedurl)
 - [Next.js Installation](https://nextjs.org/docs/app/getting-started/installation)
 
 - [Vercel Package Managers](https://vercel.com/docs/package-managers)
 - [Vercel Node.js Versions](https://vercel.com/docs/functions/runtimes/node-js/node-js-versions)
+- [Vercel Cron Jobs](https://vercel.com/docs/cron-jobs)
+- [Supabase Cron](https://supabase.com/docs/guides/cron)
 
 精確安裝版本記錄於 `pnpm-lock.yaml`。

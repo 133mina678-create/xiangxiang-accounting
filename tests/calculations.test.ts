@@ -113,6 +113,12 @@ describe("整數分攤", () => {
       id: String(i),
       event_id: "event",
       created_at: "",
+      updated_at: "",
+      status: "confirmed" as const,
+      paid_at: "",
+      confirmed_at: "",
+      disputed_at: null,
+      confirmation_method: "manual" as const,
     }));
     expect(settle(statistics(ids, es, payments))).toEqual([]);
   });
@@ -129,6 +135,12 @@ describe("整數分攤", () => {
       to_id: "a",
       amount: 50,
       created_at: "",
+      updated_at: "",
+      status: "confirmed",
+      paid_at: "",
+      confirmed_at: "",
+      disputed_at: null,
+      confirmation_method: "manual",
     };
     expect(settle(statistics(["a", "b"], [e], [p]))).toEqual([]);
     expect(

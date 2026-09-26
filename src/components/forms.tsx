@@ -206,6 +206,7 @@ export function ExpenseForm({
   onClose,
   busy,
   getRevision,
+  settlementWarning = false,
 }: {
   members: Member[];
   event: Event;
@@ -215,6 +216,7 @@ export function ExpenseForm({
   onClose: () => void;
   busy: boolean;
   getRevision: () => number;
+  settlementWarning?: boolean;
 }) {
   const [expected, setExpected] = useState(getRevision);
   const [expenseUuid] = useState(() => expense?.id ?? crypto.randomUUID());
@@ -264,6 +266,11 @@ export function ExpenseForm({
   const defaultDate = [today(), event.start_date].sort().at(-1)!;
   return (
     <Modal title={expense ? "修改這筆消費" : "記下一筆消費"} onClose={onClose}>
+      {expense && settlementWarning && (
+        <p className="settlement-warning" role="note">
+          此活動已有付款進行中或已完成的交易。修改消費不會覆蓋既有轉帳；如有差額，結算頁會另外列出調整轉帳。
+        </p>
+      )}
       <form
         onSubmit={async (e) => {
           e.preventDefault();

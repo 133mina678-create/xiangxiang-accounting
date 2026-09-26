@@ -122,7 +122,8 @@ test("手機完整流程、雙人同步、衝突、復原、自訂與份數、�
   const download = page.waitForEvent("download");
   await page.getByRole("button", { name: "匯出 CSV" }).click();
   expect((await download).suggestedFilename()).toContain("台北三天兩夜");
-  // Finish all transfers; status survives a reload.
+  // A payer uploads one proof, the recipient can dispute, then confirm a
+  // replacement proof. Settlement amounts and bank-copy behavior stay intact.
   await page.getByRole("button", { name: "最後怎麼付？", exact: true }).click();
   const hounuoTransfer = page
     .getByTestId("transfer-card")
@@ -150,18 +151,62 @@ test("手機完整流程、雙人同步、衝突、復原、自訂與份數、�
       () => document.documentElement.scrollWidth <= window.innerWidth,
     ),
   ).toBe(true);
-  for (let i = 0; i < 6; i++) {
-    const button = page.getByRole("button", { name: "✓ 已付款", exact: true });
-    if ((await button.count()) === 0) break;
-    await button.first().click();
-    await page.getByRole("button", { name: "確認", exact: true }).click();
-    await expect(page.getByRole("dialog")).toHaveCount(0);
-  }
-  await expect(page.getByText("本次活動已全部結清！")).toBeVisible();
+  const pendingCard = page.getByTestId("transfer-card").first();
+  const transferLabel = (await pendingCard.getAttribute("aria-label"))!;
+  const [transferPayer, transferRecipient] = transferLabel.split("匯款給");
+  const selectIdentity = async (name: string) => {
+    await page.getByRole("button", { name: "切換我是誰" }).click();
+    await page
+      .getByRole("dialog")
+      .getByRole("button", { name, exact: false })
+      .click();
+  };
+  await selectIdentity(transferPayer);
+  await pendingCard.getByRole("button", { name: "我已轉帳" }).click();
+  const proofPng = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9ZQMcAAAAASUVORK5CYII=",
+    "base64",
+  );
+  await page.getByLabel("選擇轉帳證明圖片").setInputFiles({
+    name: "proof.png",
+    mimeType: "image/png",
+    buffer: proofPng,
+  });
+  await expect(page.getByAltText("待上傳的轉帳證明預覽")).toBeVisible();
+  await page.getByRole("button", { name: "確認提交" }).click();
+  await expect(page.getByText("等待收款人確認", { exact: true })).toBeVisible();
+  const activeCard = page
+    .getByTestId("settlement-card")
+    .filter({ hasText: transferPayer })
+    .filter({ hasText: transferRecipient })
+    .first();
+  await selectIdentity(transferRecipient);
+  await activeCard.getByRole("button", { name: "查看轉帳證明" }).click();
+  await expect(page.getByAltText("轉帳證明", { exact: true })).toBeVisible();
+  await page.getByRole("dialog").getByRole("button", { name: "關閉" }).click();
+  await activeCard.getByRole("button", { name: "尚未收到" }).click();
+  await page.getByRole("button", { name: "確認", exact: true }).click();
+  await expect(page.getByText("尚未收到／有問題", { exact: true })).toBeVisible();
+  await expect(activeCard.getByText("自動確認已暫停", { exact: false })).toBeVisible();
+  await selectIdentity(transferPayer);
+  await activeCard.getByRole("button", { name: "重新上傳證明" }).click();
+  await page.getByLabel("選擇轉帳證明圖片").setInputFiles({
+    name: "replacement.png",
+    mimeType: "image/png",
+    buffer: proofPng,
+  });
+  await page.getByRole("button", { name: "確認提交" }).click();
+  await expect(page.getByText("等待收款人確認", { exact: true })).toBeVisible();
+  await selectIdentity(transferRecipient);
+  await activeCard.getByRole("button", { name: "確認收到" }).click();
+  await expect(page.getByText(/確定已收到 NT\$/)).toBeVisible();
+  await page.getByRole("button", { name: "確認", exact: true }).click();
+  await expect(activeCard.getByText("已確認", { exact: true })).toBeVisible();
+  await expect(activeCard.getByText("轉帳證明已依隱私設計刪除。", { exact: true })).toBeVisible();
   await page.reload();
   await page.getByRole("button", { name: /台北三天兩夜/ }).click();
   await page.getByRole("button", { name: "最後怎麼付？", exact: true }).click();
-  await expect(page.getByText("本次活動已全部結清！")).toBeVisible();
+  await expect(page.getByText("已確認", { exact: true })).toBeVisible();
   // A recipient without bank details stays in settlement and has no copy action.
   await page.getByRole("button", { name: "所有活動", exact: true }).click();
   await page.getByRole("button", { name: "新增活動", exact: true }).click();

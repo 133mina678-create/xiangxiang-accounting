@@ -18,13 +18,22 @@ import {
   CalendarDays,
   RefreshCw,
 } from "lucide-react";
-import { readBook, mutate } from "@/lib/api";
+import {
+  readBook,
+  mutate,
+  submitTransferProof,
+  transitionTransfer,
+} from "@/lib/api";
 import { settle, statistics } from "@/lib/calculations";
 import { transferRecipient } from "@/lib/payment-info";
 import { categories, money } from "@/lib/types";
-import type { Book, Event, Expense, Member } from "@/lib/types";
+import type { Book, Event, Expense, Member, Payment, Transfer } from "@/lib/types";
 import { EventForm, ExpenseForm, Modal, Person, FormError } from "./forms";
-import { TransferCard } from "./transfer-card";
+import { SettlementCard, TransferCard } from "./transfer-card";
+import {
+  TransferProofDialog,
+  TransferProofViewer,
+} from "./transfer-proof-dialog";
 
 type Dialog =
   | { kind: "identity" }
@@ -37,6 +46,13 @@ type Dialog =
       message: string;
       action: string;
       data: Record<string, unknown>;
+    }
+  | { kind: "proof-upload"; transfer: Transfer; payment?: Payment }
+  | { kind: "proof-view"; payment: Payment }
+  | {
+      kind: "transfer-confirm";
+      payment: Payment;
+      action: "confirm" | "dispute";
     }
   | { kind: "settings" }
   | null;
@@ -133,6 +149,28 @@ export default function Ledger({ secret }: { secret: string }) {
       setBusy(false);
     }
   };
+  const runTransferMutation = async (operation: () => Promise<unknown>) => {
+    if (working.current) throw new Error("上一個操作仍在處理中");
+    if (!book?.members.some((m) => m.id === actor)) {
+      setDialog({ kind: "identity" });
+      throw new Error("請先選擇操作身份");
+    }
+    working.current = true;
+    setBusy(true);
+    setError("");
+    try {
+      await operation();
+      await refresh();
+      return true;
+    } catch (caught) {
+      setError((caught as Error).message);
+      await refresh();
+      throw caught;
+    } finally {
+      working.current = false;
+      setBusy(false);
+    }
+  };
   const openEvent = (id: string) => {
     setEventId(id);
     setTab("expenses");
@@ -174,6 +212,16 @@ export default function Ledger({ secret }: { secret: string }) {
     (e) => e.event_id === eventId && !e.deleted_at,
   );
   const payments = book.payments.filter((p) => p.event_id === eventId);
+  const activePayments = payments.filter((p) =>
+    ["awaiting_confirmation", "disputed"].includes(p.status),
+  );
+  const completedPayments = payments.filter((p) =>
+    ["confirmed", "auto_confirmed"].includes(p.status),
+  );
+  const awaitingCount = payments.filter(
+    (p) => p.status === "awaiting_confirmation",
+  ).length;
+  const disputedCount = payments.filter((p) => p.status === "disputed").length;
   const total = expenses.reduce((s, x) => s + x.amount, 0);
   const filtered = expenses.filter(
     (e) =>
@@ -676,13 +724,48 @@ export default function Ledger({ secret }: { secret: string }) {
                     <span className="settle-symbol">💸</span>
                   </div>
                   <p className="muted">
-                    已扣除標記完成的轉帳。依目前帳目，使用最少筆數結清。
+                    依目前帳目使用最少筆數結清；完成轉帳後，需由收款人確認。
                   </p>
+                  {(transfers.length > 0 || activePayments.length > 0) && (
+                    <div className="settlement-reminders" aria-label="轉帳狀態提醒">
+                      <span>待付款 {transfers.length} 筆</span>
+                      <span>等待確認 {awaitingCount} 筆</span>
+                      <span className={disputedCount ? "has-dispute" : ""}>
+                        有異議 {disputedCount} 筆
+                      </span>
+                    </div>
+                  )}
+                  {activePayments.length > 0 && (
+                    <>
+                      <h3 className="subheading">付款確認中</h3>
+                      {activePayments.map((payment) => (
+                        <SettlementCard
+                          key={payment.id}
+                          payment={payment}
+                          payer={member(payment.from_id)}
+                          recipient={member(payment.to_id)}
+                          actor={actor}
+                          busy={busy}
+                          onViewProof={() => setDialog({ kind: "proof-view", payment })}
+                          onConfirm={() =>
+                            setDialog({ kind: "transfer-confirm", payment, action: "confirm" })
+                          }
+                          onDispute={() =>
+                            setDialog({ kind: "transfer-confirm", payment, action: "dispute" })
+                          }
+                          onReupload={() =>
+                            setDialog({ kind: "proof-upload", transfer: payment, payment })
+                          }
+                        />
+                      ))}
+                    </>
+                  )}
                   {transfers.length ? (
                     <>
+                      <h3 className="subheading">待付款</h3>
                       <div className="settle-intro">
                         完成以下 <b>{transfers.length}</b>{" "}
-                        筆轉帳，即可結清本次活動。
+                        筆轉帳並由收款人確認，即可結清本次活動。
                       </div>
                       {transfers.map((t, i) => {
                         const recipient = transferRecipient(t, book.members);
@@ -693,21 +776,22 @@ export default function Ledger({ secret }: { secret: string }) {
                             transfer={t}
                             payer={member(t.from_id)}
                             recipient={recipient}
+                            actor={actor}
                             busy={busy}
                             onFeedback={setNotice}
-                            onMarkPaid={() =>
-                              setDialog({
-                                kind: "confirm",
-                                title: "確認已完成轉帳？",
-                                message: `${member(t.from_id).name} 已轉 ${money(t.amount)} 給 ${recipient.name}。這個按鈕只記錄付款狀態，不會實際匯款。`,
-                                action: "payment.add",
-                                data: { event_id: event.id, ...t },
-                              })
+                            onStartPayment={() =>
+                              setDialog({ kind: "proof-upload", transfer: t })
                             }
                           />
                         );
                       })}
                     </>
+                  ) : activePayments.length ? (
+                    <div className="all-clear waiting">
+                      <span>🕐</span>
+                      <h2>所有款項都已送出</h2>
+                      <p>等待收款人確認後，本次活動就會正式結清。</p>
+                    </div>
                   ) : (
                     <div className="all-clear">
                       <span>🎉</span>
@@ -742,36 +826,27 @@ export default function Ledger({ secret }: { secret: string }) {
                     </span>
                     <span>✓ 金額平衡</span>
                   </div>
-                  {payments.length > 0 && (
+                  {completedPayments.length > 0 && (
                     <>
                       <h3 className="subheading">已完成的轉帳</h3>
-                      {payments.map((p) => (
-                        <div className="paid-row" key={p.id}>
-                          <span>
-                            ✓ {member(p.from_id).icon} {member(p.from_id).name}{" "}
-                            → {member(p.to_id).icon} {member(p.to_id).name}
-                          </span>
-                          <b>{money(p.amount)}</b>
-                          <button
-                            className="text-link"
-                            onClick={() =>
-                              setDialog({
-                                kind: "confirm",
-                                title: "取消付款標記？",
-                                message: "這筆款項會重新加入剩餘應付計算。",
-                                action: "payment.remove",
-                                data: { event_id: event.id, id: p.id },
-                              })
-                            }
-                          >
-                            取消標記
-                          </button>
-                        </div>
+                      {completedPayments.map((payment) => (
+                        <SettlementCard
+                          key={payment.id}
+                          payment={payment}
+                          payer={member(payment.from_id)}
+                          recipient={member(payment.to_id)}
+                          actor={actor}
+                          busy={busy}
+                          onViewProof={() => undefined}
+                          onConfirm={() => undefined}
+                          onDispute={() => undefined}
+                          onReupload={() => undefined}
+                        />
                       ))}
                     </>
                   )}
                   <p className="hint">
-                    修改或刪除舊消費後，已付款紀錄仍保留；若有人多付，系統會列出退還差額的轉帳。
+                    已開始或已完成的轉帳不會被重新計算覆蓋；修改舊消費後，若有人多付，系統會另外列出調整轉帳。
                   </p>
                 </section>
               )}
@@ -843,6 +918,7 @@ export default function Ledger({ secret }: { secret: string }) {
             getRevision={() => revision.current}
             onSave={save}
             busy={busy}
+            settlementWarning={payments.length > 0}
             onClose={() => setDialog(null)}
           />
         )}
@@ -902,7 +978,7 @@ export default function Ledger({ secret }: { secret: string }) {
                       setDialog({
                         kind: "confirm",
                         title: "刪除這筆消費？",
-                        message: `${x.note || c[2]} ${money(x.amount)} 將移至回收區，活動統計與結算會重新計算。`,
+                        message: `${x.note || c[2]} ${money(x.amount)} 將移至回收區，活動統計與結算會重新計算。${payments.length ? "此活動已有付款進行中或已完成的交易，既有轉帳不會被刪除或改寫；差額會另列調整轉帳。" : ""}`,
                         action: "expense.delete",
                         data: { id: x.id, event_id: x.event_id },
                       })
@@ -915,6 +991,85 @@ export default function Ledger({ secret }: { secret: string }) {
               </Modal>
             );
           })()}
+        {dialog?.kind === "proof-upload" && event && (
+          <TransferProofDialog
+            payer={member(dialog.transfer.from_id)}
+            recipient={member(dialog.transfer.to_id)}
+            amount={dialog.transfer.amount}
+            reupload={Boolean(dialog.payment)}
+            onClose={() => setDialog(null)}
+            onSubmit={async (proof) => {
+              await runTransferMutation(() =>
+                submitTransferProof(secret, {
+                  proof,
+                  revision: revision.current,
+                  actor,
+                  event_id: event.id,
+                  from_id: dialog.transfer.from_id,
+                  to_id: dialog.transfer.to_id,
+                  amount: dialog.transfer.amount,
+                  settlement_id: dialog.payment?.id,
+                }),
+              );
+              setNotice(
+                dialog.payment
+                  ? "已更新轉帳證明，重新開始 72 小時確認時間"
+                  : "轉帳證明已送出，等待收款人確認",
+              );
+              setDialog(null);
+            }}
+          />
+        )}
+        {dialog?.kind === "proof-view" && (
+          <TransferProofViewer
+            secret={secret}
+            paymentId={dialog.payment.id}
+            actor={actor}
+            onClose={() => setDialog(null)}
+          />
+        )}
+        {dialog?.kind === "transfer-confirm" && (
+          <Modal
+            title={dialog.action === "confirm" ? "確認已收到款項？" : "回報尚未收到？"}
+            onClose={() => setDialog(null)}
+          >
+            <p>
+              {dialog.action === "confirm"
+                ? `確定已收到 ${money(dialog.payment.amount)} 嗎？確認後，轉帳證明會立即刪除。`
+                : `確定尚未收到 ${money(dialog.payment.amount)} 嗎？這會暫停 72 小時自動確認。`}
+            </p>
+            <div className="two-col">
+              <button className="secondary" disabled={busy} onClick={() => setDialog(null)}>取消</button>
+              <button
+                className={dialog.action === "confirm" ? "primary" : "danger-button"}
+                disabled={busy}
+                onClick={async () => {
+                  try {
+                    await runTransferMutation(() =>
+                      transitionTransfer(
+                        secret,
+                        dialog.payment.id,
+                        revision.current,
+                        actor,
+                        dialog.action,
+                      ),
+                    );
+                    setNotice(
+                      dialog.action === "confirm"
+                        ? "已確認收到，轉帳證明已排入立即刪除"
+                        : "已回報尚未收到，自動確認已暫停",
+                    );
+                    setDialog(null);
+                  } catch {
+                    // The shared error toast already explains the failure.
+                  }
+                }}
+              >
+                {busy ? "處理中…" : "確認"}
+              </button>
+            </div>
+          </Modal>
+        )}
         {dialog?.kind === "confirm" && (
           <Modal title={dialog.title} onClose={() => setDialog(null)}>
             <p>{dialog.message}</p>

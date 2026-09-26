@@ -3,9 +3,11 @@ export function validateDeploymentEnv(env) {
   if (env.VERCEL !== "1") return;
   const url = env.NEXT_PUBLIC_SUPABASE_URL;
   const key = env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
-  if (!url || !key)
+  const serverKey = env.SUPABASE_SECRET_KEY ?? env.SUPABASE_SERVICE_ROLE_KEY;
+  const cronSecret = env.CRON_SECRET;
+  if (!url || !key || !serverKey || !cronSecret)
     throw new Error(
-      "請設定 NEXT_PUBLIC_SUPABASE_URL 與 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY 後重新部署。",
+      "請設定 Supabase 公開連線、SUPABASE_SECRET_KEY 與 CRON_SECRET 後重新部署。",
     );
   let parsed;
   try {
@@ -43,4 +45,8 @@ export function validateDeploymentEnv(env) {
         "只能使用 publishable key 或 role=anon 的舊版 key；禁止 service role。",
       );
   }
+  if (serverKey.startsWith("sb_publishable_") || serverKey === key)
+    throw new Error("SUPABASE_SECRET_KEY 必須是僅供伺服器使用的 Secret key。");
+  if (cronSecret.length < 32)
+    throw new Error("CRON_SECRET 至少需要 32 個字元。");
 }

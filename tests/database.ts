@@ -3,7 +3,19 @@ import { readFile, readdir } from "node:fs/promises";
 import type { Book } from "../src/lib/types";
 export async function database() {
   const db = new PGlite();
-  await db.exec("create role anon; create role authenticated;");
+  await db.exec(`
+    create role anon;
+    create role authenticated;
+    create role service_role;
+    create schema storage;
+    create table storage.buckets(
+      id text primary key,
+      name text not null,
+      public boolean not null default false,
+      file_size_limit bigint,
+      allowed_mime_types text[]
+    );
+  `);
   for (const file of (await readdir("supabase/migrations"))
     .filter((f) => f.endsWith(".sql"))
     .sort()) {
@@ -39,5 +51,52 @@ export async function change(
     actor,
     action,
     JSON.stringify(data),
+  ]);
+}
+export async function submitProof(
+  db: PGlite,
+  input: {
+    secret: string;
+    revision: number;
+    actor: string;
+    eventId: string;
+    fromId: string;
+    toId: string;
+    amount: number;
+    settlementId: string;
+    path: string;
+  },
+) {
+  await db.query(
+    "select public.submit_transfer_proof($1,$2,$3,$4,$5,$6,$7,$8,$9)",
+    [
+      input.secret,
+      input.revision,
+      input.actor,
+      input.eventId,
+      input.fromId,
+      input.toId,
+      input.amount,
+      input.settlementId,
+      input.path,
+    ],
+  );
+}
+export async function transition(
+  db: PGlite,
+  input: {
+    secret: string;
+    revision: number;
+    actor: string;
+    settlementId: string;
+    action: "confirm" | "dispute";
+  },
+) {
+  await db.query("select public.transition_transfer($1,$2,$3,$4,$5)", [
+    input.secret,
+    input.revision,
+    input.actor,
+    input.settlementId,
+    input.action,
   ]);
 }

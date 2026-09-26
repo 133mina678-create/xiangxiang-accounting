@@ -5,6 +5,8 @@ describe("Vercel deployment configuration", () => {
     VERCEL: "1",
     NEXT_PUBLIC_SUPABASE_URL: "https://example.supabase.co",
     NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "sb_publishable_example",
+    SUPABASE_SECRET_KEY: "sb_secret_server_only_example",
+    CRON_SECRET: "a".repeat(32),
   };
   it("accepts public configuration and local checks without credentials", () => {
     expect(() => validateDeploymentEnv(env)).not.toThrow();
