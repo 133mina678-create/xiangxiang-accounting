@@ -21,6 +21,11 @@ set name = case
      end
 where name is null or btrim(name) = '';
 
+-- The existing split-total trigger is deferred. Flush it before altering the
+-- same table again so production databases with rows do not keep trigger
+-- events pending across the NOT NULL change.
+set constraints ledger.expense_balanced immediate;
+
 alter table ledger.expenses alter column name set not null;
 do $$ begin
  if not exists(
