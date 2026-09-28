@@ -66,7 +66,11 @@ function BankPanel({ recipient, onFeedback }: {
     return (
       <div className="bank-panel bank-missing">
         <span>{recipient.icon} {recipient.name}</span>
-        <p>尚未提供匯款資料</p>
+        <p>
+          {recipient.member_type === "guest"
+            ? "此臨時成員未設定匯款資料"
+            : "尚未提供匯款資料"}
+        </p>
       </div>
     );
   return (
@@ -110,14 +114,20 @@ export function TransferCard({
   onStartPayment: () => void;
   onFeedback: (message: string) => void;
 }) {
+  const guestInvolved =
+    payer.member_type === "guest" || recipient.member_type === "guest";
   return (
     <article className="transfer" data-testid="transfer-card" aria-label={`${payer.name}匯款給${recipient.name}`}>
       <span className="transfer-index">{String(index + 1).padStart(2, "0")}</span>
       <PeopleAndAmount payer={payer} recipient={recipient} amount={transfer.amount} />
       <BankPanel recipient={recipient} onFeedback={onFeedback} />
       <div className="transfer-state pending">
-        <span className="status-pill">{settlementStatusLabel.pending_payment}</span>
-        {actor === payer.id ? (
+        <span className="status-pill">
+          {guestInvolved ? "記帳資料" : settlementStatusLabel.pending_payment}
+        </span>
+        {guestInvolved ? (
+          <p>臨時成員款項僅供記帳，請自行確認。</p>
+        ) : actor === payer.id ? (
           <button className="primary transfer-action" disabled={busy} onClick={onStartPayment}>
             <Upload size={17} /> 我已轉帳
           </button>

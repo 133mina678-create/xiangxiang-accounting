@@ -2,7 +2,7 @@
 
 **已有 Supabase / GitHub 專案：依 [正式上線步驟](DEPLOY.md) 完成部署。**
 
-六位朋友專用的旅行／聚會共同分帳工具。沒有登入、沒有收入與資產功能；打開同一個秘密連結，就能共同記帳。手機優先，桌面也可使用。
+六位固定朋友專用的旅行／聚會共同分帳工具，也可為單一活動加入臨時成員。沒有登入、沒有收入與資產功能；打開同一個秘密連結，就能共同記帳。手機優先，桌面也可使用。
 
 ## 技術與架構
 
@@ -15,9 +15,9 @@
 
 ## 已實作功能
 
-活動建立／編輯／收藏、固定六人身份選擇、活動成員、跨日帳目、日期／付款人／分類篩選、消費新增／詳情／修改／軟刪除、12 秒 Undo、永久保留的回收區、平均／自訂／份數分攤、尾差預覽、每日與活動統計、最少筆數結算、收款銀行末四碼與一鍵複製、轉帳證明預覽／壓縮／私密上傳、收款確認／異議／重新上傳、72 小時自動確認、CSV 匯出、最近 100 筆修改紀錄。
+活動建立／編輯／唯讀封存、固定六人身份選擇、活動專屬臨時成員、跨日帳目、日期／付款人／分類篩選、消費備註／新增／詳情／修改／軟刪除、12 秒 Undo、永久保留的回收區、平均／自訂／份數分攤、尾差輪替、每日與活動統計、最少筆數結算、收款銀行末四碼與一鍵複製、轉帳證明預覽／壓縮／私密上傳、收款確認／異議／重新上傳、72 小時自動確認、CSV 匯出、最近 100 筆修改紀錄。
 
-結束日期可省略；未設定時允許開始日期以後的任意日期。日期預設今天，但今天若超過活動範圍則移到最近的合法日期。活動是否進行中由使用者「移至過去活動」決定，不會午夜自動消失。每筆消費的付款人可不參與分攤。
+結束日期可省略；未設定時允許開始日期以後的任意日期。日期預設今天，但今天若超過活動範圍則移到最近的合法日期。使用者完成固定成員間的結算後可「結束活動」；結束後由資料庫強制唯讀，仍可查看與匯出。每筆消費的付款人可不參與分攤。
 
 ## 本地開發
 
@@ -42,7 +42,7 @@ PowerShell 複製環境檔：`Copy-Item .env.example .env.local`。開啟 `http:
 | -------------------------------------- | --------------------------------------------------------- |
 | `NEXT_PUBLIC_SUPABASE_URL`             | Supabase Project URL，例如 `https://abcdefgh.supabase.co` |
 | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Publishable key，或既有專案的 anon key                    |
-| `SUPABASE_SECRET_KEY`                  | Secret key，只能放在本機伺服器與 Vercel，不可公開          |
+| `SUPABASE_SECRET_KEY`                  | Secret key，只能放在本機伺服器與 Vercel，不可公開         |
 | `CRON_SECRET`                          | 至少 32 字元的隨機字串，用來保護 Vercel Cron endpoint     |
 | `ENABLE_EXPERIMENTAL_COREPACK`         | Vercel 填 `1`，使用指定的 pnpm 版本                       |
 
@@ -96,7 +96,7 @@ PowerShell 複製環境檔：`Copy-Item .env.example .env.local`。開啟 `http:
 
 ## 資料一致性與同步
 
-正規化資料表：`workspaces`、`members`、`events`、`event_members`、`expenses`、`expense_splits`、`settlements`、`activity_logs`、`proof_cleanup_queue`。可選的銀行代碼、銀行名稱、銀行帳號存放在 `members.bank_code/bank_name/bank_account`；三者皆為 `text`，未提供時皆為 `null`，可保留前導零。
+正規化資料表：`workspaces`、`members`、`events`、`event_members`、`expenses`、`expense_splits`、`settlements`、`activity_logs`、`proof_cleanup_queue`。臨時成員也是獨立的 `members.id`，以 `member_type='guest'` 與 `guest_event_id` 限定在單一活動；同名臨時成員在不同活動仍是不同 UUID。可選的銀行代碼、銀行名稱、銀行帳號存放在 `members.bank_code/bank_name/bank_account`；三者皆為 `text`，未提供時皆為 `null`，可保留前導零。
 
 所有金額為整數新台幣元。一筆消費上限 NT$100,000,000、必須大於 0；自訂個別分攤可為 0，份數為 1～10,000。前端使用安全整數與 BigInt 比例運算，SQL 使用 integer／bigint。
 
@@ -112,7 +112,7 @@ PowerShell 複製環境檔：`Copy-Item .env.example .env.local`。開啟 `http:
 
 ### 平均／份數
 
-整數除法先取每個人的商，再把未分配的元數按餘數由大到小分配（largest remainder method）。餘數相同依六人的固定順序。平均分攤等同每人一份。
+平均分攤先取每個人的整數商，再把每一元尾差依活動自己的 round-robin cursor 輪流分配。只有該筆實際分攤者會取得尾差，固定成員與臨時成員使用同一活動順序；整除時 cursor 不前進。份數分攤仍使用 largest remainder method。
 
 `100 / 3 → 34 + 33 + 33`。所有尾差在建帳時分配，結算階段永遠不會凭空增加或丟失 1 元。前端預覽與 SQL 使用相同 tie-breaking。
 
@@ -120,7 +120,7 @@ PowerShell 複製環境檔：`Copy-Item .env.example .env.local`。開啟 `http:
 
 `淨額 = 實際付款 − 應負擔`。正數為應收、負數為應付。統計頁的淨額不含朋友間轉帳，避免把轉帳當作旅行消費。
 
-`剩餘淨額 = 淨額 + 已轉出 − 已轉入`。結算頁以剩餘淨額運算。六人中搜尋所有可清除至少一方餘額的債務人／債權人配對，選擇轉帳筆數最少的方案（最多 5 筆；全員為零則 0 筆）。六人規模可精確搜尋，不需只依最大餘額貪婪配對。
+`剩餘淨額 = 淨額 + 已轉出 − 已轉入`。結算頁以剩餘淨額運算，並以記憶化搜尋選擇較少的轉帳筆數。臨時成員會正常出現在應付／應收結果，但其轉帳只列明記帳資料，不提供上傳證明或確認收款功能，也不建立付款確認紀錄。
 
 尚未付款的建議仍由原演算法即時計算。付款人提交一張證明後才建立 settlement row；伺服器檢查金額正數、不超過雙方目前應付／應收，並用 revision 防止重複提交。狀態依序為 `awaiting_confirmation`、`disputed`、`confirmed` 或 `auto_confirmed`。有異議的交易永遠不會自動確認。
 
@@ -152,7 +152,7 @@ pnpm test:e2e
 pnpm build
 ```
 
-`pnpm test` 不需要雲端憑證；會在隔離的 PGlite PostgreSQL 引擎執行正式 migration 與 seed，驗證 RPC、金額限制、錯誤 rollback、RLS／權限、soft delete／restore、衝突、轉帳狀態、72 小時到期、異議、重傳、冪等排程與 proof cleanup。計算測試包含 1,000 組守恆案例。
+`pnpm test` 不需要雲端憑證；會在隔離的 PGlite PostgreSQL 引擎執行正式 migration 與 seed，驗證 RPC、備註、唯讀封存、臨時成員、金額限制、錯誤 rollback、RLS／權限、soft delete／restore、衝突、轉帳狀態、72 小時到期、異議、重傳、冪等排程與 proof cleanup。計算測試包含 1,000 組守恆案例。
 
 `pnpm test:e2e` 自動啟動 **僅限本機測試** 的 PostgreSQL／private Storage HTTP adapter（127.0.0.1:54329）與 Next dev（127.0.0.1:3000），兩個 browser contexts 使用同一個真實 SQL 後端。測試完成後自動停止。adapter 位於 `scripts/test-server.mjs`，不在 Next 路由裡、不部署成公開 API、不使用 localStorage 存帳目。測試覆蓋手機輸入、桌面朋友看到變更、並行修改衝突、刪除 Undo、自訂驗證、份數、CSV、匯款資料遮罩與複製、圖片預覽／上傳／查看、異議、重新上傳、手動確認、未設定銀行資料、一人活動與橫向溢出。
 
@@ -162,7 +162,7 @@ pnpm build
 
 成員資料、顏色與銀行資料在資料庫，不硬編碼在 UI。用管理者 SQL 修改該 workspace 的 `ledger.members.name/icon/color/bank_code/bank_name/bank_account` 即可，舊帳目保持以相同 UUID 關聯。銀行三欄需一起設定或一起設為 `null`，帳號必須用引號包住的文字。`position` 決定顯示順序與尾差順序，不建議更動已使用的順序。
 
-若要新增第七人，目前產品刻意限定六人，需同步調整 `change_book` 的 `members`／`splits` 長度上限，並重新評估精確結算搜尋的效能與測試。不要刪除已有消費／轉帳的成員；改名字不會斷開歷史關聯。活動可取消尚無歷史關聯的成員；回收區中的消費也會保留成員關聯，確保可復原。
+六位固定成員仍使用原本 UUID、圖示、顏色與銀行資料，不需為偶爾同行的朋友修改固定名單。請在活動表單使用「新增臨時成員」；臨時成員沒有登入身份與銀行資料，只屬於建立他的活動。不要刪除已有消費／轉帳的成員；活動只能移除尚無歷史關聯的臨時成員，回收區中的消費也會保留關聯，確保可復原。
 
 ## 參考文件
 

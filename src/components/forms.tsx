@@ -6,9 +6,11 @@ import { integer, splitAmount } from "@/lib/calculations";
 export function Person({
   member,
   small = false,
+  showGuestLabel = false,
 }: {
   member: Member;
   small?: boolean;
+  showGuestLabel?: boolean;
 }) {
   return (
     <span
@@ -17,6 +19,9 @@ export function Person({
     >
       <span className="avatar">{member.icon}</span>
       <span>{member.name}</span>
+      {showGuestLabel && member.member_type === "guest" && (
+        <small className="guest-label">臨時成員</small>
+      )}
     </span>
   );
 }
@@ -85,10 +90,36 @@ export function EventForm({
 }) {
   const [expected, setExpected] = useState(getRevision);
   const [eventUuid] = useState(() => event?.id ?? crypto.randomUUID());
-  const [selected, setSelected] = useState(
-    event?.members ?? members.map((m) => m.id),
+  const availableMembers = members.filter(
+    (member) =>
+      member.member_type !== "guest" || member.guest_event_id === event?.id,
   );
+  const [selected, setSelected] = useState(
+    event?.members ??
+      availableMembers
+        .filter((member) => member.member_type !== "guest")
+        .map((member) => member.id),
+  );
+  const [guests, setGuests] = useState<
+    { id: string; name: string; note: string }[]
+  >([]);
+  const [guestOpen, setGuestOpen] = useState(false);
+  const [guestName, setGuestName] = useState("");
+  const [guestNote, setGuestNote] = useState("");
   const [error, setError] = useState("");
+  const guestMembers: Member[] = guests.map((guest, index) => ({
+    ...guest,
+    icon: "👤",
+    color: "#718096",
+    position: 1000 + index,
+    bank_code: null,
+    bank_name: null,
+    bank_account: null,
+    member_type: "guest",
+    guest_event_id: eventUuid,
+    guest_note: guest.note,
+  }));
+  const displayedMembers = [...availableMembers, ...guestMembers];
   return (
     <Modal title={event ? "編輯活動" : "新的小旅行"} onClose={onClose}>
       <form
@@ -109,6 +140,7 @@ export function EventForm({
                 end_date: f.get("end_date"),
                 note: f.get("note"),
                 members: selected,
+                guests: guests.filter((guest) => selected.includes(guest.id)),
               },
               expected,
             )
@@ -150,7 +182,7 @@ export function EventForm({
         <fieldset>
           <legend>這次有誰一起？</legend>
           <div className="member-grid">
-            {members.map((m) => (
+            {displayedMembers.map((m) => (
               <button
                 type="button"
                 key={m.id}
@@ -164,11 +196,73 @@ export function EventForm({
                   )
                 }
               >
-                <Person member={m} />
+                <Person member={m} showGuestLabel />
                 <span>{selected.includes(m.id) ? "✓" : "＋"}</span>
               </button>
             ))}
           </div>
+          <button
+            type="button"
+            className="text-link guest-add-toggle"
+            onClick={() => setGuestOpen((open) => !open)}
+          >
+            ＋ 新增臨時成員
+          </button>
+          {guestOpen && (
+            <div className="guest-editor">
+              <label>
+                名稱
+                <input
+                  aria-label="臨時成員名稱"
+                  maxLength={40}
+                  value={guestName}
+                  onChange={(e) => setGuestName(e.target.value)}
+                  placeholder="例如：小明"
+                />
+              </label>
+              <label>
+                簡單備註（選填）
+                <input
+                  aria-label="臨時成員備註"
+                  maxLength={200}
+                  value={guestNote}
+                  onChange={(e) => setGuestNote(e.target.value)}
+                  placeholder="例如：星醬的朋友"
+                />
+              </label>
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => {
+                  const name = guestName.trim();
+                  if (!name) {
+                    setError("請輸入臨時成員名稱");
+                    return;
+                  }
+                  if (
+                    displayedMembers.some(
+                      (member) => member.name.trim() === name,
+                    )
+                  ) {
+                    setError("這個活動已有同名成員");
+                    return;
+                  }
+                  const id = crypto.randomUUID();
+                  setGuests((current) => [
+                    ...current,
+                    { id, name, note: guestNote.trim() },
+                  ]);
+                  setSelected((current) => [...current, id]);
+                  setGuestName("");
+                  setGuestNote("");
+                  setGuestOpen(false);
+                  setError("");
+                }}
+              >
+                加入這次活動
+              </button>
+            </div>
+          )}
         </fieldset>
         {event && (
           <p className="hint">
@@ -259,7 +353,7 @@ export function ExpenseForm({
           integer(values[id] ?? "", mode === "weighted" ? 1 : 0),
         ]),
       ),
-      members.map((member) => member.id),
+      active.map((member) => member.id),
       event.remainder_rotation_index ?? 0,
     );
   } catch (e) {
@@ -369,11 +463,11 @@ export function ExpenseForm({
         </fieldset>
         <label>
           備註（選填）
-          <input
+          <textarea
             name="note"
-            maxLength={500}
+            maxLength={300}
             defaultValue={expense?.note}
-            placeholder="例如：鼎王晚餐"
+            placeholder="例如：Uber 去高鐵站"
           />
         </label>
         <fieldset>
@@ -476,9 +570,7 @@ export function ExpenseForm({
           {mode === "equal" &&
             preview.length > 0 &&
             Number(amount) % preview.length !== 0 && (
-              <p className="hint">
-                本筆無法整除的尾差已依成員公平輪替分配。
-              </p>
+              <p className="hint">本筆無法整除的尾差已依成員公平輪替分配。</p>
             )}
           {mode === "weighted" && (
             <p className="hint">

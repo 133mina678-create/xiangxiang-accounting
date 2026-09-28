@@ -12,7 +12,7 @@ import {
   Settings2,
   Trash2,
   Pencil,
-  Archive,
+  Lock,
   RotateCcw,
   MapPin,
   CalendarDays,
@@ -27,7 +27,14 @@ import {
 import { settle, statistics } from "@/lib/calculations";
 import { transferRecipient } from "@/lib/payment-info";
 import { categories, money } from "@/lib/types";
-import type { Book, Event, Expense, Member, Payment, Transfer } from "@/lib/types";
+import type {
+  Book,
+  Event,
+  Expense,
+  Member,
+  Payment,
+  Transfer,
+} from "@/lib/types";
 import { EventForm, ExpenseForm, Modal, Person, FormError } from "./forms";
 import { SettlementCard, TransferCard } from "./transfer-card";
 import {
@@ -128,7 +135,9 @@ export default function Ledger({ secret }: { secret: string }) {
     expected?: number,
   ) => {
     if (working.current) return false;
-    if (!book?.members.some((m) => m.id === actor)) {
+    if (
+      !book?.members.some((m) => m.id === actor && m.member_type !== "guest")
+    ) {
       setDialog({ kind: "identity" });
       return false;
     }
@@ -151,7 +160,9 @@ export default function Ledger({ secret }: { secret: string }) {
   };
   const runTransferMutation = async (operation: () => Promise<unknown>) => {
     if (working.current) throw new Error("上一個操作仍在處理中");
-    if (!book?.members.some((m) => m.id === actor)) {
+    if (
+      !book?.members.some((m) => m.id === actor && m.member_type !== "guest")
+    ) {
       setDialog({ kind: "identity" });
       throw new Error("請先選擇操作身份");
     }
@@ -207,7 +218,11 @@ export default function Ledger({ secret }: { secret: string }) {
       </main>
     );
   const member = (id: string): Member => book.members.find((m) => m.id === id)!;
+  const fixedMembers = book.members.filter(
+    (candidate) => candidate.member_type !== "guest",
+  );
   const event = book.events.find((e) => e.id === eventId);
+  const eventIsClosed = event?.status === "closed";
   const expenses = book.expenses.filter(
     (e) => e.event_id === eventId && !e.deleted_at,
   );
@@ -237,6 +252,27 @@ export default function Ledger({ secret }: { secret: string }) {
     : [];
   const balances = event ? statistics(event.members, expenses, payments) : [];
   const transfers = settle(balances);
+  const guestTransfers = transfers.filter(
+    (transfer) =>
+      member(transfer.from_id).member_type === "guest" ||
+      member(transfer.to_id).member_type === "guest",
+  );
+  const fixedTransfers = transfers.filter(
+    (transfer) =>
+      member(transfer.from_id).member_type !== "guest" &&
+      member(transfer.to_id).member_type !== "guest",
+  );
+  const fixedBalances = balances.filter(
+    (balance) => member(balance.id).member_type !== "guest",
+  );
+  const hasUnfinishedPayments =
+    (fixedBalances.some((balance) => balance.remaining > 0) &&
+      fixedBalances.some((balance) => balance.remaining < 0)) ||
+    payments.some((payment) =>
+      ["pending_payment", "awaiting_confirmation", "disputed"].includes(
+        payment.status,
+      ),
+    );
   const days = [...new Set(expenses.map((e) => e.date))].sort();
   const exportCSV = () => {
     const cell = (s: string) =>
@@ -279,7 +315,7 @@ export default function Ledger({ secret }: { secret: string }) {
   };
   const cards = (past: boolean) =>
     book.events
-      .filter((e) => e.archived === past)
+      .filter((e) => (e.status === "closed") === past)
       .map((e) => {
         const es = book.expenses.filter(
           (x) => x.event_id === e.id && !x.deleted_at,
@@ -295,7 +331,7 @@ export default function Ledger({ secret }: { secret: string }) {
                 <MapPin size={22} />
               </span>
               <span className="event-status">
-                {past ? "回憶收藏" : "一起出發"}
+                {past ? "已結束" : "一起出發"}
               </span>
               <div className="event-friends">
                 {e.members.map((id) => (
@@ -351,7 +387,7 @@ export default function Ledger({ secret }: { secret: string }) {
               aria-label="切換我是誰"
               onClick={() => setDialog({ kind: "identity" })}
             >
-              {book.members.some((m) => m.id === actor) ? (
+              {fixedMembers.some((m) => m.id === actor) ? (
                 <Person small member={member(actor)} />
               ) : (
                 "我是誰？"
@@ -386,12 +422,14 @@ export default function Ledger({ secret }: { secret: string }) {
               <div className="section-title">
                 <h2>
                   進行中的活動{" "}
-                  <span>{book.events.filter((e) => !e.archived).length}</span>
+                  <span>
+                    {book.events.filter((e) => e.status === "active").length}
+                  </span>
                 </h2>
                 <span className="muted">下一段回憶，從這裡開始</span>
               </div>
               <div className="event-grid">{cards(false)}</div>
-              {!book.events.some((e) => !e.archived) && (
+              {!book.events.some((e) => e.status === "active") && (
                 <div className="empty">
                   <BookOpen />
                   <h3>還沒有進行中的活動</h3>
@@ -409,7 +447,7 @@ export default function Ledger({ secret }: { secret: string }) {
                 <span className="muted">花費有記錄，回憶也在</span>
               </div>
               <div className="event-grid">{cards(true)}</div>
-              {!book.events.some((e) => e.archived) && (
+              {!book.events.some((e) => e.status === "closed") && (
                 <p className="muted">結束的活動可以收進這裡，隨時回來看看。</p>
               )}
               <footer className="home-footer">
@@ -444,35 +482,58 @@ export default function Ledger({ secret }: { secret: string }) {
                   <strong data-testid="event-total">{money(total)}</strong>
                   <span>
                     {expenses.length} 筆消費 ·{" "}
-                    {event.archived ? "已收藏" : "持續記錄中"}
+                    {eventIsClosed ? "已結束" : "持續記錄中"}
                   </span>
                 </div>
               </section>
+              {eventIsClosed && (
+                <div className="closed-banner" role="status">
+                  <Lock size={18} />
+                  <span>
+                    <strong>此活動已結束</strong>
+                    歷史帳目目前為唯讀
+                  </span>
+                </div>
+              )}
               <div className="event-tools">
-                <button
-                  className="text-link"
-                  onClick={() => setDialog({ kind: "event", event })}
-                >
-                  <Pencil size={15} />
-                  編輯活動
-                </button>
+                {!eventIsClosed && (
+                  <button
+                    className="text-link"
+                    onClick={() => setDialog({ kind: "event", event })}
+                  >
+                    <Pencil size={15} />
+                    編輯活動
+                  </button>
+                )}
                 <button className="text-link" onClick={exportCSV}>
                   <Download size={15} />
                   匯出 CSV
                 </button>
-                <button
-                  className="text-link"
-                  disabled={busy}
-                  onClick={() =>
-                    void save("event.archive", {
-                      event_id: event.id,
-                      archived: !event.archived,
-                    })
-                  }
-                >
-                  <Archive size={15} />
-                  {event.archived ? "重新開啟" : "移至過去活動"}
-                </button>
+                {!eventIsClosed && (
+                  <button
+                    className="text-link"
+                    disabled={busy}
+                    onClick={() => {
+                      if (hasUnfinishedPayments) {
+                        setError(
+                          "目前仍有尚未完成的款項，請完成所有結算後再結束活動。",
+                        );
+                        return;
+                      }
+                      setDialog({
+                        kind: "confirm",
+                        title: "結束這個活動？",
+                        message:
+                          "確定要結束這個活動嗎？結束後帳目將改為唯讀，但仍可查看歷史紀錄。",
+                        action: "event.close",
+                        data: { event_id: event.id },
+                      });
+                    }}
+                  >
+                    <Lock size={15} />
+                    結束活動
+                  </button>
+                )}
               </div>
               <nav className="tabs" aria-label="活動頁面">
                 <button
@@ -501,13 +562,15 @@ export default function Ledger({ secret }: { secret: string }) {
                 <section>
                   <div className="section-title">
                     <h2>一起花的每一筆</h2>
-                    <button
-                      className="primary add-expense"
-                      onClick={() => setDialog({ kind: "expense" })}
-                    >
-                      <Plus size={19} />
-                      新增消費
-                    </button>
+                    {!eventIsClosed && (
+                      <button
+                        className="primary add-expense"
+                        onClick={() => setDialog({ kind: "expense" })}
+                      >
+                        <Plus size={19} />
+                        新增消費
+                      </button>
+                    )}
                   </div>
                   <div className="filters">
                     <label>
@@ -727,8 +790,14 @@ export default function Ledger({ secret }: { secret: string }) {
                     依目前帳目使用最少筆數結清；完成轉帳後，需由收款人確認。
                   </p>
                   {(transfers.length > 0 || activePayments.length > 0) && (
-                    <div className="settlement-reminders" aria-label="轉帳狀態提醒">
-                      <span>待付款 {transfers.length} 筆</span>
+                    <div
+                      className="settlement-reminders"
+                      aria-label="轉帳狀態提醒"
+                    >
+                      <span>待付款 {fixedTransfers.length} 筆</span>
+                      {guestTransfers.length > 0 && (
+                        <span>臨時成員記帳 {guestTransfers.length} 筆</span>
+                      )}
                       <span>等待確認 {awaitingCount} 筆</span>
                       <span className={disputedCount ? "has-dispute" : ""}>
                         有異議 {disputedCount} 筆
@@ -746,15 +815,29 @@ export default function Ledger({ secret }: { secret: string }) {
                           recipient={member(payment.to_id)}
                           actor={actor}
                           busy={busy}
-                          onViewProof={() => setDialog({ kind: "proof-view", payment })}
+                          onViewProof={() =>
+                            setDialog({ kind: "proof-view", payment })
+                          }
                           onConfirm={() =>
-                            setDialog({ kind: "transfer-confirm", payment, action: "confirm" })
+                            setDialog({
+                              kind: "transfer-confirm",
+                              payment,
+                              action: "confirm",
+                            })
                           }
                           onDispute={() =>
-                            setDialog({ kind: "transfer-confirm", payment, action: "dispute" })
+                            setDialog({
+                              kind: "transfer-confirm",
+                              payment,
+                              action: "dispute",
+                            })
                           }
                           onReupload={() =>
-                            setDialog({ kind: "proof-upload", transfer: payment, payment })
+                            setDialog({
+                              kind: "proof-upload",
+                              transfer: payment,
+                              payment,
+                            })
                           }
                         />
                       ))}
@@ -762,10 +845,9 @@ export default function Ledger({ secret }: { secret: string }) {
                   )}
                   {transfers.length ? (
                     <>
-                      <h3 className="subheading">待付款</h3>
+                      <h3 className="subheading">待付款與記帳資料</h3>
                       <div className="settle-intro">
-                        完成以下 <b>{transfers.length}</b>{" "}
-                        筆轉帳並由收款人確認，即可結清本次活動。
+                        固定成員間的款項可使用轉帳確認流程；臨時成員款項只列明金額，請自行確認。
                       </div>
                       {transfers.map((t, i) => {
                         const recipient = transferRecipient(t, book.members);
@@ -882,7 +964,7 @@ export default function Ledger({ secret }: { secret: string }) {
               方便預設付款人，也讓大家知道是誰記的帳。隨時可以切換。
             </p>
             <div className="identity-grid">
-              {book.members.map((m) => (
+              {fixedMembers.map((m) => (
                 <button
                   key={m.id}
                   onClick={() => {
@@ -933,10 +1015,7 @@ export default function Ledger({ secret }: { secret: string }) {
               );
             const c = categories.find((c) => c[0] === x.category)!;
             return (
-              <Modal
-                title={`${c[1]} ${x.note || c[2]}`}
-                onClose={() => setDialog(null)}
-              >
+              <Modal title={`${c[1]} ${c[2]}`} onClose={() => setDialog(null)}>
                 <p className="detail-amount">{money(x.amount)}</p>
                 <p className="muted">
                   {x.date} · {c[2]} ·{" "}
@@ -964,30 +1043,38 @@ export default function Ledger({ secret }: { secret: string }) {
                     </div>
                   ))}
                 </div>
-                <div className="two-col">
-                  <button
-                    className="secondary"
-                    onClick={() => setDialog({ kind: "expense", expense: x })}
-                  >
-                    <Pencil size={16} />
-                    修改
-                  </button>
-                  <button
-                    className="danger-button"
-                    onClick={() =>
-                      setDialog({
-                        kind: "confirm",
-                        title: "刪除這筆消費？",
-                        message: `${x.note || c[2]} ${money(x.amount)} 將移至回收區，活動統計與結算會重新計算。${payments.length ? "此活動已有付款進行中或已完成的交易，既有轉帳不會被刪除或改寫；差額會另列調整轉帳。" : ""}`,
-                        action: "expense.delete",
-                        data: { id: x.id, event_id: x.event_id },
-                      })
-                    }
-                  >
-                    <Trash2 size={16} />
-                    刪除
-                  </button>
-                </div>
+                {x.note && (
+                  <div className="expense-note">
+                    <strong>備註</strong>
+                    <p>{x.note}</p>
+                  </div>
+                )}
+                {!eventIsClosed && (
+                  <div className="two-col">
+                    <button
+                      className="secondary"
+                      onClick={() => setDialog({ kind: "expense", expense: x })}
+                    >
+                      <Pencil size={16} />
+                      修改
+                    </button>
+                    <button
+                      className="danger-button"
+                      onClick={() =>
+                        setDialog({
+                          kind: "confirm",
+                          title: "刪除這筆消費？",
+                          message: `${x.note || c[2]} ${money(x.amount)} 將移至回收區，活動統計與結算會重新計算。${payments.length ? "此活動已有付款進行中或已完成的交易，既有轉帳不會被刪除或改寫；差額會另列調整轉帳。" : ""}`,
+                          action: "expense.delete",
+                          data: { id: x.id, event_id: x.event_id },
+                        })
+                      }
+                    >
+                      <Trash2 size={16} />
+                      刪除
+                    </button>
+                  </div>
+                )}
               </Modal>
             );
           })()}
@@ -1030,7 +1117,11 @@ export default function Ledger({ secret }: { secret: string }) {
         )}
         {dialog?.kind === "transfer-confirm" && (
           <Modal
-            title={dialog.action === "confirm" ? "確認已收到款項？" : "回報尚未收到？"}
+            title={
+              dialog.action === "confirm"
+                ? "確認已收到款項？"
+                : "回報尚未收到？"
+            }
             onClose={() => setDialog(null)}
           >
             <p>
@@ -1039,9 +1130,17 @@ export default function Ledger({ secret }: { secret: string }) {
                 : `確定尚未收到 ${money(dialog.payment.amount)} 嗎？這會暫停 72 小時自動確認。`}
             </p>
             <div className="two-col">
-              <button className="secondary" disabled={busy} onClick={() => setDialog(null)}>取消</button>
               <button
-                className={dialog.action === "confirm" ? "primary" : "danger-button"}
+                className="secondary"
+                disabled={busy}
+                onClick={() => setDialog(null)}
+              >
+                取消
+              </button>
+              <button
+                className={
+                  dialog.action === "confirm" ? "primary" : "danger-button"
+                }
                 disabled={busy}
                 onClick={async () => {
                   try {
@@ -1143,19 +1242,24 @@ export default function Ledger({ secret }: { secret: string }) {
                       {e.date}
                     </small>
                   </span>
-                  <button
-                    className="secondary"
-                    disabled={busy}
-                    onClick={() =>
-                      void save("expense.restore", {
-                        id: e.id,
-                        event_id: e.event_id,
-                      })
-                    }
-                  >
-                    <RotateCcw size={15} />
-                    復原
-                  </button>
+                  {book.events.find((event) => event.id === e.event_id)
+                    ?.status === "closed" ? (
+                    <small className="muted">活動已結束</small>
+                  ) : (
+                    <button
+                      className="secondary"
+                      disabled={busy}
+                      onClick={() =>
+                        void save("expense.restore", {
+                          id: e.id,
+                          event_id: e.event_id,
+                        })
+                      }
+                    >
+                      <RotateCcw size={15} />
+                      復原
+                    </button>
+                  )}
                 </div>
               ))}
           </Modal>

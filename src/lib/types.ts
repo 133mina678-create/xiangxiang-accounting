@@ -7,6 +7,9 @@ export type Member = {
   bank_code: string | null;
   bank_name: string | null;
   bank_account: string | null;
+  member_type: "fixed" | "guest";
+  guest_event_id: string | null;
+  guest_note: string | null;
 };
 export type Event = {
   id: string;
@@ -15,6 +18,8 @@ export type Event = {
   end_date: string | null;
   note: string;
   archived: boolean;
+  status: "active" | "closed";
+  closed_at: string | null;
   remainder_rotation_index: number;
   members: string[];
 };

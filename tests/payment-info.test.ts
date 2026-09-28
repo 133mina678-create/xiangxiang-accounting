@@ -23,6 +23,9 @@ const members: Member[] = [
   bank_code,
   bank_name,
   bank_account,
+  member_type: "fixed" as const,
+  guest_event_id: null,
+  guest_note: null,
 }));
 
 const byName = (name: string) => members.find((m) => m.name === name)!;

@@ -205,6 +205,21 @@ describe("整數分攤", () => {
     const ts = settle(ids.map((id, i) => ({ id, remaining: values[i] })));
     expect(ts).toHaveLength(4);
   });
+  it("大量臨時成員仍可在手機上以確定性方式結算", () => {
+    const many = Array.from({ length: 12 }, (_, index) => ({
+      id: `guest-${index}`,
+      remaining: index < 6 ? -10 : 10,
+    }));
+    const transfers = settle(many);
+    expect(transfers).toHaveLength(6);
+    for (const transfer of transfers) {
+      many.find((row) => row.id === transfer.from_id)!.remaining +=
+        transfer.amount;
+      many.find((row) => row.id === transfer.to_id)!.remaining -=
+        transfer.amount;
+    }
+    expect(many.every((row) => row.remaining === 0)).toBe(true);
+  });
   it("1000 組整數分攤與結算守恆", () => {
     for (let k = 1; k <= 1000; k++) {
       const amount = k * 97;

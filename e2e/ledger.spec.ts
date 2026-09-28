@@ -186,8 +186,12 @@ test("手機完整流程、雙人同步、衝突、復原、自訂與份數、�
   await page.getByRole("dialog").getByRole("button", { name: "關閉" }).click();
   await activeCard.getByRole("button", { name: "尚未收到" }).click();
   await page.getByRole("button", { name: "確認", exact: true }).click();
-  await expect(page.getByText("尚未收到／有問題", { exact: true })).toBeVisible();
-  await expect(activeCard.getByText("自動確認已暫停", { exact: false })).toBeVisible();
+  await expect(
+    page.getByText("尚未收到／有問題", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    activeCard.getByText("自動確認已暫停", { exact: false }),
+  ).toBeVisible();
   await selectIdentity(transferPayer);
   await activeCard.getByRole("button", { name: "重新上傳證明" }).click();
   await page.getByLabel("選擇轉帳證明圖片").setInputFiles({
@@ -202,7 +206,9 @@ test("手機完整流程、雙人同步、衝突、復原、自訂與份數、�
   await expect(page.getByText(/確定已收到 NT\$/)).toBeVisible();
   await page.getByRole("button", { name: "確認", exact: true }).click();
   await expect(activeCard.getByText("已確認", { exact: true })).toBeVisible();
-  await expect(activeCard.getByText("轉帳證明已依隱私設計刪除。", { exact: true })).toBeVisible();
+  await expect(
+    activeCard.getByText("轉帳證明已依隱私設計刪除。", { exact: true }),
+  ).toBeVisible();
   await page.reload();
   await page.getByRole("button", { name: /台北三天兩夜/ }).click();
   await page.getByRole("button", { name: "最後怎麼付？", exact: true }).click();
@@ -264,6 +270,73 @@ test("手機完整流程、雙人同步、衝突、復原、自訂與份數、�
       () => document.documentElement.scrollWidth <= window.innerWidth,
     ),
   ).toBe(true);
+  // Event-scoped guests can pay and split normally, but their settlement cards
+  // are informational and never expose proof/confirmation actions.
+  await page.getByRole("button", { name: "所有活動", exact: true }).click();
+  await page.getByRole("button", { name: "新增活動", exact: true }).click();
+  await page.getByLabel("活動名稱").fill("臨時朋友測試");
+  await page.getByRole("button", { name: "新增臨時成員" }).click();
+  await page.getByLabel("臨時成員名稱").fill("小明");
+  await page.getByLabel("臨時成員備註").fill("星醬的朋友");
+  await page.getByRole("button", { name: "加入這次活動" }).click();
+  await expect(
+    page.getByRole("dialog").getByText("臨時成員", { exact: true }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "建立活動", exact: true }).click();
+  await page.getByRole("button", { name: /臨時朋友測試/ }).click();
+  await page.getByRole("button", { name: "新增消費", exact: true }).click();
+  await page.getByLabel("消費金額", { exact: true }).fill("100");
+  await page.getByLabel("備註（選填）", { exact: true }).fill("Uber 去高鐵站");
+  await page
+    .getByRole("group", { name: "誰先付款？" })
+    .getByRole("button", { name: /小明/ })
+    .click();
+  await page.getByRole("button", { name: "儲存消費", exact: true }).click();
+  await page.getByRole("button", { name: /Uber 去高鐵站/ }).click();
+  await expect(
+    page.getByRole("dialog").getByText("備註", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("dialog").getByText("Uber 去高鐵站", { exact: true }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "關閉", exact: true }).click();
+  await page.getByRole("button", { name: "統計", exact: true }).click();
+  await expect(page.getByText("小明", { exact: true }).first()).toBeVisible();
+  await page.getByRole("button", { name: "最後怎麼付？", exact: true }).click();
+  const guestTransfer = page
+    .getByTestId("transfer-card")
+    .filter({ hasText: "小明" })
+    .first();
+  await expect(guestTransfer).toContainText("記帳資料");
+  await expect(guestTransfer).toContainText("臨時成員款項僅供記帳");
+  await expect(
+    guestTransfer.getByRole("button", { name: "我已轉帳" }),
+  ).toHaveCount(0);
+  await page.getByRole("button", { name: "帳目", exact: true }).click();
+  await page.getByRole("button", { name: "結束活動", exact: true }).click();
+  await expect(
+    page.getByText("結束後帳目將改為唯讀", { exact: false }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "確認", exact: true }).click();
+  await expect(page.getByText("此活動已結束", { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "新增消費", exact: true }),
+  ).toHaveCount(0);
+  await page.getByRole("button", { name: /Uber 去高鐵站/ }).click();
+  await expect(
+    page.getByRole("dialog").getByRole("button", { name: "修改" }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("dialog").getByRole("button", { name: "刪除" }),
+  ).toHaveCount(0);
+  for (const width of [375, 390, 430]) {
+    await page.setViewportSize({ width, height: 844 });
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= window.innerWidth,
+      ),
+    ).toBe(true);
+  }
   expect(errors).toEqual([]);
   await second.close();
 });

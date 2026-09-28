@@ -28,7 +28,8 @@ export function splitEqualRotating(
   )
     throw new Error("請選擇不重複的分攤成員");
   let cursor =
-    ((integer(rotationIndex, 0, Number.MAX_SAFE_INTEGER) % rotationOrder.length) +
+    ((integer(rotationIndex, 0, Number.MAX_SAFE_INTEGER) %
+      rotationOrder.length) +
       rotationOrder.length) %
     rotationOrder.length;
   const participants = new Set(ids);
@@ -73,8 +74,7 @@ export function splitAmount(
   }
   if (mode === "equal")
     return splitEqualRotating(amount, ids, rotationOrder, rotationIndex).splits;
-  if (mode !== "weighted")
-    throw new Error("不支援的分攤方式");
+  if (mode !== "weighted") throw new Error("不支援的分攤方式");
   const weights = ids.map((id) => integer(values[id], 1, 10000));
   const total = weights.reduce((s, n) => s + BigInt(n), 0n);
   const result = ids.map((member_id, i) => ({
@@ -130,7 +130,7 @@ export function statistics(
     throw new Error("結算金額不平衡");
   return result;
 }
-// At most six people: exhaustively explore debtor/creditor pairings.
+// Exhaustively explore debtor/creditor pairings for the usual small group.
 // Each edge clears at least one balance; choose the minimum number of edges.
 export function settle(
   balances: { id: string; remaining: number }[],
@@ -140,9 +140,37 @@ export function settle(
     balances.reduce((s, x) => s + x.remaining, 0) !== 0
   )
     throw new Error("結算金額不平衡");
+  const nonzero = balances.filter((balance) => balance.remaining !== 0);
+  // Keep the exact minimum-edge search for the fixed group and ordinary guest
+  // counts. A deterministic sweep prevents unusually large guest lists from
+  // causing exponential work on a phone.
+  if (nonzero.length > 10) {
+    const values = balances.map((balance) => balance.remaining);
+    const transfers: Transfer[] = [];
+    let debtor = 0;
+    let creditor = 0;
+    while (true) {
+      while (debtor < values.length && values[debtor] >= 0) debtor++;
+      while (creditor < values.length && values[creditor] <= 0) creditor++;
+      if (debtor === values.length || creditor === values.length) break;
+      const amount = Math.min(-values[debtor], values[creditor]);
+      transfers.push({
+        from_id: balances[debtor].id,
+        to_id: balances[creditor].id,
+        amount,
+      });
+      values[debtor] += amount;
+      values[creditor] -= amount;
+    }
+    return transfers;
+  }
   let best: Transfer[] | undefined;
+  const seen = new Map<string, number>();
   function visit(values: number[], path: Transfer[]) {
     if (best && path.length >= best.length) return;
+    const key = values.join(",");
+    if ((seen.get(key) ?? Number.POSITIVE_INFINITY) <= path.length) return;
+    seen.set(key, path.length);
     if (values.every((v) => v === 0)) {
       best = [...path];
       return;

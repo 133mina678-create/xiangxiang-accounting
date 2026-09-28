@@ -454,6 +454,24 @@ small {
   gap: 8px 15px;
   margin-top: 20px;
 }
+.closed-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 18px;
+  padding: 14px 16px;
+  border: 1px solid #d9d2c5;
+  border-radius: 14px;
+  background: #f2efe8;
+  color: #665f55;
+}
+.closed-banner span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 0.82rem;
+}
+.closed-banner strong { color: var(--ink); }
 .total-box {
   background: #edeedd;
   border: 1px solid #e4e5d1;
@@ -1139,6 +1157,24 @@ legend {
 .member-choice > span:last-child:not(.person) {
   color: #9c8767;
 }
+.guest-label {
+  color: var(--muted);
+  font-size: 0.67rem;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.guest-add-toggle { margin-top: 12px; }
+.guest-editor {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #f8f5ee;
+}
+.guest-editor label { min-width: 0; }
+.guest-editor input { margin-top: 6px; }
 .category-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -1240,6 +1276,21 @@ legend {
   align-items: center;
   gap: 8px;
   margin-top: 20px !important;
+}
+.expense-note {
+  margin: -6px 0 22px;
+  padding: 0 2px;
+}
+.expense-note strong {
+  display: block;
+  margin-bottom: 7px;
+  font-size: 0.85rem;
+}
+.expense-note p {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.65;
 }
 .identity-grid {
   display: grid;
