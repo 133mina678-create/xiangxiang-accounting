@@ -280,6 +280,7 @@ export default function Ledger({ secret }: { secret: string }) {
     const rows = [
       [
         "日期",
+        "消費名稱",
         "分類",
         "備註",
         "付款人",
@@ -290,6 +291,7 @@ export default function Ledger({ secret }: { secret: string }) {
       ],
       ...expenses.map((e) => [
         e.date,
+        e.name,
         categories.find((c) => c[0] === e.category)![2],
         e.note,
         member(e.payer_id).name,
@@ -661,7 +663,7 @@ export default function Ledger({ secret }: { secret: string }) {
                             {c[1]}
                           </span>
                           <span className="expense-main">
-                            <strong>{x.note || c[2]}</strong>
+                            <strong>{x.name}</strong>
                             <span>
                               <Person small member={member(x.payer_id)} />{" "}
                               <span className="muted">先付款</span>
@@ -1015,7 +1017,7 @@ export default function Ledger({ secret }: { secret: string }) {
               );
             const c = categories.find((c) => c[0] === x.category)!;
             return (
-              <Modal title={`${c[1]} ${c[2]}`} onClose={() => setDialog(null)}>
+              <Modal title={`${c[1]} ${x.name}`} onClose={() => setDialog(null)}>
                 <p className="detail-amount">{money(x.amount)}</p>
                 <p className="muted">
                   {x.date} · {c[2]} ·{" "}
@@ -1064,7 +1066,7 @@ export default function Ledger({ secret }: { secret: string }) {
                         setDialog({
                           kind: "confirm",
                           title: "刪除這筆消費？",
-                          message: `${x.note || c[2]} ${money(x.amount)} 將移至回收區，活動統計與結算會重新計算。${payments.length ? "此活動已有付款進行中或已完成的交易，既有轉帳不會被刪除或改寫；差額會另列調整轉帳。" : ""}`,
+                          message: `${x.name} ${money(x.amount)} 將移至回收區，活動統計與結算會重新計算。${payments.length ? "此活動已有付款進行中或已完成的交易，既有轉帳不會被刪除或改寫；差額會另列調整轉帳。" : ""}`,
                           action: "expense.delete",
                           data: { id: x.id, event_id: x.event_id },
                         })
@@ -1236,7 +1238,7 @@ export default function Ledger({ secret }: { secret: string }) {
               .map((e) => (
                 <div className="trash-row" key={e.id}>
                   <span>
-                    {e.note || "消費"} · {money(e.amount)}
+                    {e.name} · {money(e.amount)}
                     <small>
                       {book.events.find((x) => x.id === e.event_id)?.name} ·{" "}
                       {e.date}

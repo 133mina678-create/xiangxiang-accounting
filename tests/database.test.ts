@@ -426,7 +426,7 @@ describe("真實 migration / PostgreSQL RPC", () => {
   });
   it("伺服器重新計算平均分，忽略偽造分攤", async () => {
     let b = await read(db, secret);
-    const e = b.expenses.find((e) => e.note === "鼎王晚餐")!;
+    const e = b.expenses.find((e) => e.name === "鼎王晚餐")!;
     await change(db, secret, b.revision, b.members[0].id, "expense.save", {
       ...e,
       amount: 100,
@@ -539,7 +539,7 @@ describe("真實 migration / PostgreSQL RPC", () => {
       await isolated.db.close();
     }
   });
-  it("支出備註可新增修改，並在資料庫限制 300 字", async () => {
+  it("消費名稱與備註獨立保存，並在資料庫限制備註 300 字", async () => {
     const isolated = await database();
     try {
       let book = await read(isolated.db, isolated.secret);
@@ -550,12 +550,13 @@ describe("真實 migration / PostgreSQL RPC", () => {
         book.revision,
         book.members[0].id,
         "expense.save",
-        { ...original, note: "9/27 雞排" },
+        { ...original, name: "海底撈", note: "閃身步" },
       );
       book = await read(isolated.db, isolated.secret);
-      expect(
-        book.expenses.find((expense) => expense.id === original.id)?.note,
-      ).toBe("9/27 雞排");
+      expect(book.expenses.find((expense) => expense.id === original.id)).toMatchObject({
+        name: "海底撈",
+        note: "閃身步",
+      });
       await change(
         isolated.db,
         isolated.secret,
@@ -571,6 +572,9 @@ describe("真實 migration / PostgreSQL RPC", () => {
       expect(
         book.expenses.find((expense) => expense.id === original.id)?.note,
       ).toBe("");
+      expect(
+        book.expenses.find((expense) => expense.id === original.id)?.name,
+      ).toBe("海底撈");
       await expect(
         change(
           isolated.db,

@@ -17,6 +17,7 @@ function expense(
   return {
     id: Math.random().toString(),
     event_id: "event",
+    name: "測試消費",
     date,
     amount,
     payer_id,

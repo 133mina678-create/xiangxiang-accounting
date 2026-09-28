@@ -15,7 +15,7 @@
 
 ## 已實作功能
 
-活動建立／編輯／唯讀封存、固定六人身份選擇、活動專屬臨時成員、跨日帳目、日期／付款人／分類篩選、消費備註／新增／詳情／修改／軟刪除、12 秒 Undo、永久保留的回收區、平均／自訂／份數分攤、尾差輪替、每日與活動統計、最少筆數結算、收款銀行末四碼與一鍵複製、轉帳證明預覽／壓縮／私密上傳、收款確認／異議／重新上傳、72 小時自動確認、CSV 匯出、最近 100 筆修改紀錄。
+活動建立／編輯／唯讀封存、固定六人身份選擇、活動專屬臨時成員、跨日帳目、日期／付款人／分類篩選、獨立的消費名稱與選填備註、消費新增／詳情／修改／軟刪除、12 秒 Undo、永久保留的回收區、平均／自訂／份數分攤、尾差輪替、每日與活動統計、最少筆數結算、收款銀行末四碼與一鍵複製、轉帳證明預覽／壓縮／私密上傳、收款確認／異議／重新上傳、72 小時自動確認、CSV 匯出、最近 100 筆修改紀錄。
 
 結束日期可省略；未設定時允許開始日期以後的任意日期。日期預設今天，但今天若超過活動範圍則移到最近的合法日期。使用者完成固定成員間的結算後可「結束活動」；結束後由資料庫強制唯讀，仍可查看與匯出。每筆消費的付款人可不參與分攤。
 
@@ -96,7 +96,7 @@ PowerShell 複製環境檔：`Copy-Item .env.example .env.local`。開啟 `http:
 
 ## 資料一致性與同步
 
-正規化資料表：`workspaces`、`members`、`events`、`event_members`、`expenses`、`expense_splits`、`settlements`、`activity_logs`、`proof_cleanup_queue`。臨時成員也是獨立的 `members.id`，以 `member_type='guest'` 與 `guest_event_id` 限定在單一活動；同名臨時成員在不同活動仍是不同 UUID。可選的銀行代碼、銀行名稱、銀行帳號存放在 `members.bank_code/bank_name/bank_account`；三者皆為 `text`，未提供時皆為 `null`，可保留前導零。
+正規化資料表：`workspaces`、`members`、`events`、`event_members`、`expenses`、`expense_splits`、`settlements`、`activity_logs`、`proof_cleanup_queue`。消費主標題存放在 `expenses.name`，補充備註存放在 `expenses.note`，兩者不互相 fallback。臨時成員也是獨立的 `members.id`，以 `member_type='guest'` 與 `guest_event_id` 限定在單一活動；同名臨時成員在不同活動仍是不同 UUID。可選的銀行代碼、銀行名稱、銀行帳號存放在 `members.bank_code/bank_name/bank_account`；三者皆為 `text`，未提供時皆為 `null`，可保留前導零。
 
 所有金額為整數新台幣元。一筆消費上限 NT$100,000,000、必須大於 0；自訂個別分攤可為 0，份數為 1～10,000。前端使用安全整數與 BigInt 比例運算，SQL 使用 integer／bigint。
 

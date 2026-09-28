@@ -381,6 +381,7 @@ export function ExpenseForm({
               {
                 id: expenseUuid,
                 event_id: event.id,
+                name: f.get("name"),
                 date: f.get("date"),
                 amount: integer(amount, 1),
                 payer_id: payer,
@@ -396,6 +397,17 @@ export function ExpenseForm({
           else setExpected(getRevision());
         }}
       >
+        <label>
+          消費名稱
+          <input
+            name="name"
+            aria-label="消費名稱"
+            required
+            maxLength={80}
+            defaultValue={expense?.name}
+            placeholder="例如：海底撈"
+          />
+        </label>
         <label className="amount-label">
           消費金額 <span>新台幣・整數元</span>
           <div className="amount-field">

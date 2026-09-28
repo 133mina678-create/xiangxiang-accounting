@@ -67,18 +67,21 @@ test("手機完整流程、雙人同步、衝突、復原、自訂與份數、�
   ).toBe(true);
   await friend.getByRole("button", { name: "帳目", exact: true }).click();
   await page.getByRole("button", { name: "新增消費", exact: true }).click();
+  await page.getByLabel("消費名稱", { exact: true }).fill("海底撈");
   await page.getByLabel("消費金額", { exact: true }).fill("100");
-  await page.getByLabel("備註（選填）", { exact: true }).fill("測試點心");
+  await page.getByLabel("備註（選填）", { exact: true }).fill("閃身步");
   await page.getByRole("button", { name: "儲存消費", exact: true }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  await expect(friend.getByRole("button", { name: /測試點心/ })).toBeVisible({
+  await expect(friend.getByRole("button", { name: /海底撈/ })).toBeVisible({
     timeout: 10000,
   });
+  await expect(friend.getByText("閃身步", { exact: true })).toHaveCount(0);
   await expect(friend.getByTestId("event-total")).toHaveText("NT$ 6,890");
   // Both edit the same record. Polling must not advance the form's base revision.
-  await page.getByRole("button", { name: /測試點心/ }).click();
+  await page.getByRole("button", { name: /海底撈/ }).click();
+  await expect(page.getByRole("dialog").getByText("閃身步", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "修改", exact: true }).click();
-  await friend.getByRole("button", { name: /測試點心/ }).click();
+  await friend.getByRole("button", { name: /海底撈/ }).click();
   await friend.getByRole("button", { name: "修改", exact: true }).click();
   await page.getByLabel("消費金額", { exact: true }).fill("120");
   await page.getByRole("button", { name: "儲存修改", exact: true }).click();
@@ -93,14 +96,14 @@ test("手機完整流程、雙人同步、衝突、復原、自訂與份數、�
   );
   await friend.getByRole("button", { name: "關閉", exact: true }).click();
   // Confirm delete, then restore through undo.
-  await page.getByRole("button", { name: /測試點心/ }).click();
+  await page.getByRole("button", { name: /海底撈/ }).click();
   await page.getByRole("button", { name: "刪除", exact: true }).click();
   await page.getByRole("button", { name: "確認", exact: true }).click();
-  await expect(page.getByRole("button", { name: /測試點心/ })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /海底撈/ })).toHaveCount(0);
   await page.getByRole("button", { name: "復原 Undo" }).click();
-  await expect(page.getByRole("button", { name: /測試點心/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /海底撈/ })).toBeVisible();
   // Custom mode rejects mismatch, allows zero share, then weighted edit.
-  await page.getByRole("button", { name: /測試點心/ }).click();
+  await page.getByRole("button", { name: /海底撈/ }).click();
   await page.getByRole("button", { name: "修改", exact: true }).click();
   await page
     .getByRole("combobox", { name: "分攤方式", exact: true })
@@ -110,7 +113,7 @@ test("手機完整流程、雙人同步、衝突、復原、自訂與份數、�
   await page.getByLabel("厚諾分攤金額").fill("20");
   await page.getByRole("button", { name: "儲存修改" }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  await page.getByRole("button", { name: /測試點心/ }).click();
+  await page.getByRole("button", { name: /海底撈/ }).click();
   await page.getByRole("button", { name: "修改", exact: true }).click();
   await page
     .getByRole("combobox", { name: "分攤方式", exact: true })
@@ -225,6 +228,7 @@ test("手機完整流程、雙人同步、衝突、復原、自訂與份數、�
   await page.getByRole("button", { name: "建立活動", exact: true }).click();
   await page.getByRole("button", { name: /兔子收款測試/ }).click();
   await page.getByRole("button", { name: "新增消費", exact: true }).click();
+  await page.getByLabel("消費名稱", { exact: true }).fill("兔子代墊");
   await page.getByLabel("消費金額", { exact: true }).fill("100");
   await page
     .getByRole("group", { name: "誰先付款？" })
@@ -260,6 +264,7 @@ test("手機完整流程、雙人同步、衝突、復原、自訂與份數、�
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await page.getByRole("button", { name: /一個人的咖啡/ }).click();
   await page.getByRole("button", { name: "新增消費", exact: true }).click();
+  await page.getByLabel("消費名稱", { exact: true }).fill("咖啡");
   await page.getByLabel("消費金額", { exact: true }).fill("60");
   await page.getByRole("button", { name: "儲存消費", exact: true }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
@@ -285,8 +290,9 @@ test("手機完整流程、雙人同步、衝突、復原、自訂與份數、�
   await page.getByRole("button", { name: "建立活動", exact: true }).click();
   await page.getByRole("button", { name: /臨時朋友測試/ }).click();
   await page.getByRole("button", { name: "新增消費", exact: true }).click();
+  await page.getByLabel("消費名稱", { exact: true }).fill("Uber 去高鐵站");
   await page.getByLabel("消費金額", { exact: true }).fill("100");
-  await page.getByLabel("備註（選填）", { exact: true }).fill("Uber 去高鐵站");
+  await page.getByLabel("備註（選填）", { exact: true }).fill("星醬先幫大家叫車");
   await page
     .getByRole("group", { name: "誰先付款？" })
     .getByRole("button", { name: /小明/ })
@@ -297,7 +303,7 @@ test("手機完整流程、雙人同步、衝突、復原、自訂與份數、�
     page.getByRole("dialog").getByText("備註", { exact: true }),
   ).toBeVisible();
   await expect(
-    page.getByRole("dialog").getByText("Uber 去高鐵站", { exact: true }),
+    page.getByRole("dialog").getByText("星醬先幫大家叫車", { exact: true }),
   ).toBeVisible();
   await page.getByRole("button", { name: "關閉", exact: true }).click();
   await page.getByRole("button", { name: "統計", exact: true }).click();

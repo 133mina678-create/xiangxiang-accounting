@@ -27,6 +27,7 @@ export type Split = { member_id: string; share_amount: number; weight: number };
 export type Expense = {
   id: string;
   event_id: string;
+  name: string;
   date: string;
   amount: number;
   payer_id: string;
