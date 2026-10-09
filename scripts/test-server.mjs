@@ -50,7 +50,9 @@ const server = createServer(async (req, res) => {
   try {
     if (req.url?.startsWith("/storage/v1/object/transfer-proofs/")) {
       const objectPath = decodeURIComponent(
-        req.url.split("?")[0].slice("/storage/v1/object/transfer-proofs/".length),
+        req.url
+          .split("?")[0]
+          .slice("/storage/v1/object/transfer-proofs/".length),
       );
       if (req.method === "POST") {
         const chunks = [];
@@ -67,7 +69,9 @@ const server = createServer(async (req, res) => {
     }
     if (req.url?.startsWith("/storage/v1/object/sign/transfer-proofs/")) {
       const objectPath = decodeURIComponent(
-        req.url.split("?")[0].slice("/storage/v1/object/sign/transfer-proofs/".length),
+        req.url
+          .split("?")[0]
+          .slice("/storage/v1/object/sign/transfer-proofs/".length),
       );
       if (!proofObjects.has(objectPath)) throw new Error("proof not found");
       for await (const _chunk of req) void _chunk;
@@ -81,8 +85,12 @@ const server = createServer(async (req, res) => {
     let raw = "";
     for await (const chunk of req) raw += chunk;
     const p = raw ? JSON.parse(raw) : {};
-    if (req.url === "/storage/v1/object/transfer-proofs" && req.method === "DELETE") {
-      for (const objectPath of p.prefixes ?? []) proofObjects.delete(objectPath);
+    if (
+      req.url === "/storage/v1/object/transfer-proofs" &&
+      req.method === "DELETE"
+    ) {
+      for (const objectPath of p.prefixes ?? [])
+        proofObjects.delete(objectPath);
       res.end(JSON.stringify({ message: "Successfully deleted" }));
       return;
     }
@@ -100,26 +108,58 @@ const server = createServer(async (req, res) => {
         JSON.stringify(p.p_data),
       ]);
       res.end("null");
+    } else if (req.url === "/rest/v1/rpc/start_settlement") {
+      const result = await db.query(
+        "select public.start_settlement($1,$2,$3,$4,$5) result",
+        [
+          p.p_secret,
+          p.p_revision,
+          p.p_actor,
+          p.p_event,
+          JSON.stringify(p.p_plan),
+        ],
+      );
+      res.end(JSON.stringify(result.rows[0].result));
+    } else if (req.url === "/rest/v1/rpc/cancel_settlement") {
+      await db.query("select public.cancel_settlement($1,$2,$3,$4)", [
+        p.p_secret,
+        p.p_revision,
+        p.p_actor,
+        p.p_event,
+      ]);
+      res.end("null");
     } else if (req.url === "/rest/v1/rpc/submit_transfer_proof") {
       const result = await db.query(
         "select public.submit_transfer_proof($1,$2,$3,$4,$5,$6,$7,$8,$9) result",
-        [p.p_secret,p.p_revision,p.p_actor,p.p_event,p.p_from,p.p_to,p.p_amount,p.p_settlement,p.p_proof_path],
+        [
+          p.p_secret,
+          p.p_revision,
+          p.p_actor,
+          p.p_event,
+          p.p_from,
+          p.p_to,
+          p.p_amount,
+          p.p_settlement,
+          p.p_proof_path,
+        ],
       );
       res.end(JSON.stringify(result.rows[0].result));
     } else if (req.url === "/rest/v1/rpc/transition_transfer") {
       const result = await db.query(
         "select public.transition_transfer($1,$2,$3,$4,$5) result",
-        [p.p_secret,p.p_revision,p.p_actor,p.p_settlement,p.p_action],
+        [p.p_secret, p.p_revision, p.p_actor, p.p_settlement, p.p_action],
       );
       res.end(JSON.stringify(result.rows[0].result));
     } else if (req.url === "/rest/v1/rpc/get_transfer_proof_path") {
       const result = await db.query(
         "select public.get_transfer_proof_path($1,$2,$3) result",
-        [p.p_secret,p.p_actor,p.p_settlement],
+        [p.p_secret, p.p_actor, p.p_settlement],
       );
       res.end(JSON.stringify(result.rows[0].result));
     } else if (req.url === "/rest/v1/rpc/process_due_transfers") {
-      const result = await db.query("select public.process_due_transfers() result");
+      const result = await db.query(
+        "select public.process_due_transfers() result",
+      );
       res.end(JSON.stringify(result.rows[0].result));
     } else if (req.url === "/rest/v1/rpc/claim_proof_cleanup") {
       const result = await db.query(
@@ -128,13 +168,19 @@ const server = createServer(async (req, res) => {
       );
       res.end(JSON.stringify(result.rows));
     } else if (req.url === "/rest/v1/rpc/complete_proof_cleanup") {
-      await db.query("select public.complete_proof_cleanup($1::uuid[])", [p.p_ids]);
+      await db.query("select public.complete_proof_cleanup($1::uuid[])", [
+        p.p_ids,
+      ]);
       res.end("null");
     } else if (req.url === "/rest/v1/rpc/defer_proof_cleanup") {
-      await db.query("select public.defer_proof_cleanup($1::uuid[])", [p.p_ids]);
+      await db.query("select public.defer_proof_cleanup($1::uuid[])", [
+        p.p_ids,
+      ]);
       res.end("null");
     } else if (req.url === "/rest/v1/rpc/queue_proof_cleanup") {
-      await db.query("select public.queue_proof_cleanup($1)", [p.p_object_path]);
+      await db.query("select public.queue_proof_cleanup($1)", [
+        p.p_object_path,
+      ]);
       res.end("null");
     } else {
       res.statusCode = 404;

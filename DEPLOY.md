@@ -16,8 +16,8 @@ Vercel → 專案 → Settings → Environment Variables：
 | -------------------------------------- | ------------------------------------- |
 | `NEXT_PUBLIC_SUPABASE_URL`             | Connect 顯示的 `https://…supabase.co` |
 | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | `sb_publishable_…` 或舊版 anon key    |
-| `SUPABASE_SECRET_KEY`                  | `sb_secret_…`，只供伺服器使用          |
-| `CRON_SECRET`                          | 自行產生至少 32 字元的隨機字串         |
+| `SUPABASE_SECRET_KEY`                  | `sb_secret_…`，只供伺服器使用         |
+| `CRON_SECRET`                          | 自行產生至少 32 字元的隨機字串        |
 | `ENABLE_EXPERIMENTAL_COREPACK`         | `1`                                   |
 
 不需要資料庫密碼、JWT signing secret 或登入設定。帳本秘密連結也不是環境變數。`SUPABASE_SECRET_KEY` 與 `CRON_SECRET` 只存在 Vercel server runtime，不會寫入前端 bundle；修改後要 Redeploy。
@@ -36,6 +36,22 @@ Project Settings → Integrations → GitHub：確認 repository 為 `133mina678
 4. `supabase/migrations/202609260003_update_branding_and_member_icon.sql`
 5. `supabase/migrations/202609260004_member_bank_details.sql`
 6. `supabase/migrations/202609260005_transfer_confirmation.sql`
+7. `supabase/migrations/202609260006_add_tuzicao_bank_details.sql`
+8. `supabase/migrations/202609260007_remainder_rotation.sql`
+9. `supabase/migrations/202609280001_event_closure_and_guest_members.sql`
+10. `supabase/migrations/202609280002_expense_name.sql`
+11. `supabase/migrations/202610090001_settlement_snapshots.sql`
+
+### 正式結算 migration 上線前備份
+
+`202610090001_settlement_snapshots.sql` 是 additive migration：只增加快照表、欄位、constraint、trigger 與 RPC，不會刪除或重建既有帳目；舊活動預設保持 `draft`，舊付款列保留且 `snapshot_id` 為 `null`。即使如此，正式環境套用前仍先完成下列檢查：
+
+1. Supabase Dashboard → **Database → Backups**，確認最近一次備份成功且其時間早於本次 deployment；若方案支援 on-demand backup，先建立一份並等到完成。
+2. 另用 Supabase CLI／`pg_dump` 匯出正式資料庫，至少保存 `ledger` schema 的 schema + data；將檔案放在加密的私人位置，不要 commit。
+3. 記下 deployment 前的 Git commit 與 migration 清單，再推送包含新 migration 的 commit。
+4. GitHub integration 顯示成功後，在 SQL Editor 執行 `supabase/verify.sql`，所有列都必須為 `true`，再用既有秘密連結測試一個未結算活動。
+
+回復方案：若 migration 尚未建立任何正式快照，優先修正 SQL 後以前進 migration 修復；若必須完整回復，先停止網站寫入，再由 Supabase Backups／CLI dump 還原到部署前時間點。**一旦已建立正式快照或有人提交付款，不要用手動 DROP 欄位回退**，避免移除付款紀錄；此時使用 forward fix，或在維護時段用已驗證的完整備份還原。
 
 若開啟選項時程式已經推送，需重新觸發部署：在 GitHub 編輯此文件增加一個空行並 commit 到 main 即可。
 

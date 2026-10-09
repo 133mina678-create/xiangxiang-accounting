@@ -5,6 +5,8 @@ import {
   splitEqualRotating,
   statistics,
   settle,
+  transfersForMember,
+  transferTotalsForMember,
 } from "../src/lib/calculations";
 import type { Expense, Payment } from "../src/lib/types";
 const ids = ["a", "b", "c", "d", "e", "f"];
@@ -220,6 +222,21 @@ describe("整數分攤", () => {
         transfer.amount;
     }
     expect(many.every((row) => row.remaining === 0)).toBe(true);
+  });
+  it("個人結算只篩選相關交易，金額與全部結算一致", () => {
+    const rows = [
+      { from_id: "a", to_id: "b", amount: 800 },
+      { from_id: "c", to_id: "a", amount: 350 },
+      { from_id: "d", to_id: "b", amount: 200 },
+    ];
+    expect(transfersForMember(rows, "a")).toEqual(rows.slice(0, 2));
+    expect(transferTotalsForMember(rows, "a")).toEqual({
+      outgoing: 800,
+      incoming: 350,
+    });
+    expect(transferTotalsForMember(transfersForMember(rows, "a"), "a")).toEqual(
+      transferTotalsForMember(rows, "a"),
+    );
   });
   it("1000 組整數分攤與結算守恆", () => {
     for (let k = 1; k <= 1000; k++) {

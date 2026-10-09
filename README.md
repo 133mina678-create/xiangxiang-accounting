@@ -15,7 +15,7 @@
 
 ## 已實作功能
 
-活動建立／編輯／唯讀封存、固定六人身份選擇、活動專屬臨時成員、跨日帳目、日期／付款人／分類篩選、獨立的消費名稱與選填備註、消費新增／詳情／修改／軟刪除、12 秒 Undo、永久保留的回收區、平均／自訂／份數分攤、尾差輪替、每日與活動統計、最少筆數結算、收款銀行末四碼與一鍵複製、轉帳證明預覽／壓縮／私密上傳、收款確認／異議／重新上傳、72 小時自動確認、CSV 匯出、最近 100 筆修改紀錄。
+活動建立／編輯／唯讀封存、固定六人身份選擇、活動專屬臨時成員、跨日帳目、日期／付款人／分類篩選、獨立的消費名稱與選填備註、消費新增／詳情／修改／軟刪除、12 秒 Undo、永久保留的回收區、平均／自訂／份數分攤、尾差輪替、每日與活動統計、正式結算快照與帳目鎖定、全部／個人結算檢視、最少筆數結算、收款銀行末四碼與一鍵複製、一次完整付款、轉帳證明預覽／壓縮／私密上傳、收款確認／異議／撤回／重新上傳、72 小時自動確認、CSV 匯出、最近 100 筆修改紀錄。
 
 結束日期可省略；未設定時允許開始日期以後的任意日期。日期預設今天，但今天若超過活動範圍則移到最近的合法日期。使用者完成固定成員間的結算後可「結束活動」；結束後由資料庫強制唯讀，仍可查看與匯出。每筆消費的付款人可不參與分攤。
 
@@ -86,6 +86,7 @@ PowerShell 複製環境檔：`Copy-Item .env.example .env.local`。開啟 `http:
 - RPC 是刻意設計的 `SECURITY DEFINER` 安全入口，`search_path=''` 且全部物件明確指定 schema。每次 mutation 驗證 workspace／event／actor／關聯成員並在單一 transaction 完成。
 - 前端身份只存在 localStorage，僅用於預設付款人和標記操作人。任何持有連結者均可選任何名字，**activity log 不是不可偽造的身份稽核**。
 - 轉帳確認同樣只使用這個可切換身份做協作 UX；它不是金融級身份驗證或金融級付款證明系統。持有秘密連結者仍可能切換成付款人或收款人。
+- 不導入完整會員系統的下一步可採「每位固定成員各自的 PIN／claim code」：資料庫只存雜湊，驗證後由伺服器簽發短效、HttpOnly、限 workspace 與 member 的 capability cookie；提交付款、確認收款與提出異議都必須同時具備秘密連結和該 cookie。現行版本尚未實作此層，不能用於彼此不信任的使用者。
 - 設定 `Referrer-Policy: no-referrer`、禁止 iframe、`noindex`，無分析追蹤、第三方字型或第三方圖片。不將秘密寫入活動紀錄。
 - 銀行資料和帳本一起受秘密連結保護；畫面只顯示帳號末四碼，完整帳號僅在使用者按下複製時送進剪貼簿，不放入 URL、metadata、activity log 或瀏覽器 console。秘密連結持有人仍可透過受保護 RPC 取得帳本資料，因此連結不可公開。
 - 轉帳證明只存在 private bucket，帳本 snapshot 永遠排除 Storage path。付款雙方查看時由伺服器驗證秘密連結與協作身份，再建立 10 分鐘 signed URL；proof path 不放入 app query string、activity log、analytics 或 console。手動／自動確認後不保留圖片。
@@ -96,7 +97,7 @@ PowerShell 複製環境檔：`Copy-Item .env.example .env.local`。開啟 `http:
 
 ## 資料一致性與同步
 
-正規化資料表：`workspaces`、`members`、`events`、`event_members`、`expenses`、`expense_splits`、`settlements`、`activity_logs`、`proof_cleanup_queue`。消費主標題存放在 `expenses.name`，補充備註存放在 `expenses.note`，兩者不互相 fallback。臨時成員也是獨立的 `members.id`，以 `member_type='guest'` 與 `guest_event_id` 限定在單一活動；同名臨時成員在不同活動仍是不同 UUID。可選的銀行代碼、銀行名稱、銀行帳號存放在 `members.bank_code/bank_name/bank_account`；三者皆為 `text`，未提供時皆為 `null`，可保留前導零。
+正規化資料表：`workspaces`、`members`、`events`、`event_members`、`expenses`、`expense_splits`、`settlement_snapshots`、`settlements`、`activity_logs`、`proof_cleanup_queue`。消費主標題存放在 `expenses.name`，補充備註存放在 `expenses.note`，兩者不互相 fallback。臨時成員也是獨立的 `members.id`，以 `member_type='guest'` 與 `guest_event_id` 限定在單一活動；同名臨時成員在不同活動仍是不同 UUID。可選的銀行代碼、銀行名稱、銀行帳號存放在 `members.bank_code/bank_name/bank_account`；三者皆為 `text`，未提供時皆為 `null`，可保留前導零。
 
 所有金額為整數新台幣元。一筆消費上限 NT$100,000,000、必須大於 0；自訂個別分攤可為 0，份數為 1～10,000。前端使用安全整數與 BigInt 比例運算，SQL 使用 integer／bigint。
 
@@ -122,11 +123,13 @@ PowerShell 複製環境檔：`Copy-Item .env.example .env.local`。開啟 `http:
 
 `剩餘淨額 = 淨額 + 已轉出 − 已轉入`。結算頁以剩餘淨額運算，並以記憶化搜尋選擇較少的轉帳筆數。臨時成員會正常出現在應付／應收結果，但其轉帳只列明記帳資料，不提供上傳證明或確認收款功能，也不建立付款確認紀錄。
 
-尚未付款的建議仍由原演算法即時計算。付款人提交一張證明後才建立 settlement row；伺服器檢查金額正數、不超過雙方目前應付／應收，並用 revision 防止重複提交。狀態依序為 `awaiting_confirmation`、`disputed`、`confirmed` 或 `auto_confirmed`。有異議的交易永遠不會自動確認。
+活動編輯中顯示的是即時結算預覽。按下「開始結算」後，資料庫在同一 transaction 鎖住 workspace／event、重新驗證每位成員的收支平衡，保存消費、分攤、餘額與轉帳關係 JSON 快照，建立一筆應付款對應一筆 `settlements` row，最後鎖定活動帳目。唯一 constraint、row lock、revision 與狀態檢查共同防止重複快照、重複付款與網路重送。尚未有人提交付款時可取消快照回到編輯；一旦進入等待確認、異議或完成狀態就不能取消或覆寫。
+
+每筆款項只允許一次完整付款，不支援部分或分次付款。固定成員間的狀態依序為 `pending_payment`、`awaiting_confirmation`、`disputed`、`confirmed` 或 `auto_confirmed`；付款人在等待確認時可透過明確的撤回操作回到待付款，收款人提出異議後付款人可重新上傳。有異議的交易永遠不會自動確認。臨時成員關係保存為 `record_only`，只列明金額，不提供證明或確認操作。
 
 `paid_at + 72 hours` 是唯一自動確認期限。Supabase Cron 依 `0 * * * *` 每小時透過 `pg_net` 呼叫受 Bearer secret 保護的伺服器端點；URL 與 secret 加密存放在 Supabase Vault。資料庫函式只更新仍為 `awaiting_confirmation` 的到期 row，因此可重複執行。確認時先清空 proof path 並寫入清理佇列，再嘗試刪除 Storage object；失敗會保留在 queue，由後續排程重試。重新上傳、刪除 settlement 或硬刪除活動也使用同一清理機制。
 
-修改或刪除舊消費不會覆蓋已開始／已完成交易。原金額與歷史永久保留；若重算後有人多付，演算法會另列調整轉帳，表單也會顯示對帳提醒。
+正式結算後，資料庫 trigger 會拒絕消費、分攤、活動成員與正式交易金額的修改／刪除，不只依賴前端隱藏按鈕。漏記費用的安全延伸方案是建立 append-only 的「補充結算批次」，只針對新增費用產生新快照及新交易，絕不改寫舊批次；本版先鎖定既有正式結算，尚未開放補充批次 UI。
 
 ### Demo 預期結果
 
@@ -152,9 +155,9 @@ pnpm test:e2e
 pnpm build
 ```
 
-`pnpm test` 不需要雲端憑證；會在隔離的 PGlite PostgreSQL 引擎執行正式 migration 與 seed，驗證 RPC、備註、唯讀封存、臨時成員、金額限制、錯誤 rollback、RLS／權限、soft delete／restore、衝突、轉帳狀態、72 小時到期、異議、重傳、冪等排程與 proof cleanup。計算測試包含 1,000 組守恆案例。
+`pnpm test` 不需要雲端憑證；會在隔離的 PGlite PostgreSQL 引擎執行正式 migration 與 seed，驗證 RPC、備註、唯讀封存、臨時成員、正式快照、鎖定與取消、重複提交防護、金額限制、錯誤 rollback、RLS／權限、soft delete／restore、衝突、轉帳狀態、72 小時到期、異議、撤回、重傳、冪等排程與 proof cleanup。計算測試包含 1,000 組守恆案例。
 
-`pnpm test:e2e` 自動啟動 **僅限本機測試** 的 PostgreSQL／private Storage HTTP adapter（127.0.0.1:54329）與 Next dev（127.0.0.1:3000），兩個 browser contexts 使用同一個真實 SQL 後端。測試完成後自動停止。adapter 位於 `scripts/test-server.mjs`，不在 Next 路由裡、不部署成公開 API、不使用 localStorage 存帳目。測試覆蓋手機輸入、桌面朋友看到變更、並行修改衝突、刪除 Undo、自訂驗證、份數、CSV、匯款資料遮罩與複製、圖片預覽／上傳／查看、異議、重新上傳、手動確認、未設定銀行資料、一人活動與橫向溢出。
+`pnpm test:e2e` 自動啟動 **僅限本機測試** 的 PostgreSQL／private Storage HTTP adapter（127.0.0.1:54329）與 Next dev（127.0.0.1:3000），兩個 browser contexts 使用同一個真實 SQL 後端。測試完成後自動停止。adapter 位於 `scripts/test-server.mjs`，不在 Next 路由裡、不部署成公開 API、不使用 localStorage 存帳目。測試覆蓋手機輸入、桌面朋友看到變更、並行修改衝突、刪除 Undo、自訂驗證、份數、CSV、全部／個人結算、正式快照、匯款資料遮罩與複製、圖片預覽／上傳／查看、異議、重新上傳、手動確認、未設定銀行資料、一人活動與橫向溢出。
 
 本機 SQL 測試不等於已驗證你的 Supabase 專案設定或 Vercel production 帳號；正式部署後仍需以實際網域做雙手機驗收。
 

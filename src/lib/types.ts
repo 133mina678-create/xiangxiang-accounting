@@ -20,6 +20,9 @@ export type Event = {
   archived: boolean;
   status: "active" | "closed";
   closed_at: string | null;
+  settlement_state: "draft" | "locked";
+  settlement_snapshot_id: string | null;
+  settlement_started_at: string | null;
   remainder_rotation_index: number;
   members: string[];
 };
@@ -42,6 +45,7 @@ export type Expense = {
 export type Mode = "equal" | "custom" | "weighted";
 export type Transfer = { from_id: string; to_id: string; amount: number };
 export type SettlementStatus =
+  | "record_only"
   | "pending_payment"
   | "awaiting_confirmation"
   | "disputed"
@@ -51,6 +55,7 @@ export type ConfirmationMethod = "manual" | "auto" | "legacy" | null;
 export type Payment = Transfer & {
   id: string;
   event_id: string;
+  snapshot_id?: string | null;
   status: SettlementStatus;
   paid_at: string | null;
   confirmed_at: string | null;

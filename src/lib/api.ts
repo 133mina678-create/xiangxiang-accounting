@@ -1,5 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
-import type { Book } from "./types";
+import type { Book, Transfer } from "./types";
 export const configured = Boolean(
   process.env.NEXT_PUBLIC_SUPABASE_URL &&
   process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
@@ -53,6 +53,46 @@ export async function mutate(
   }
 }
 
+function throwRpcError(message: string) {
+  if (message.includes("conflict"))
+    throw new Error("朋友剛更新了帳本，請同步後再試一次。");
+  throw new Error(message);
+}
+
+export async function startSettlement(
+  secret: string,
+  revision: number,
+  actor: string,
+  eventId: string,
+  plan: (Transfer & { id: string })[],
+) {
+  if (!client) throw new Error("尚未連接雲端帳本");
+  const { error } = await client.rpc("start_settlement", {
+    p_secret: secret,
+    p_revision: revision,
+    p_actor: actor,
+    p_event: eventId,
+    p_plan: plan,
+  });
+  if (error) throwRpcError(error.message);
+}
+
+export async function cancelSettlement(
+  secret: string,
+  revision: number,
+  actor: string,
+  eventId: string,
+) {
+  if (!client) throw new Error("尚未連接雲端帳本");
+  const { error } = await client.rpc("cancel_settlement", {
+    p_secret: secret,
+    p_revision: revision,
+    p_actor: actor,
+    p_event: eventId,
+  });
+  if (error) throwRpcError(error.message);
+}
+
 async function parseResponse(response: Response) {
   const body = (await response.json().catch(() => ({}))) as { error?: string };
   if (!response.ok) throw new Error(body.error || "操作未完成，請稍後再試。");
@@ -89,7 +129,7 @@ export async function transitionTransfer(
   id: string,
   revision: number,
   actor: string,
-  action: "confirm" | "dispute",
+  action: "confirm" | "dispute" | "withdraw",
 ) {
   return parseResponse(
     await fetch(`/api/book/${secret}/transfer/${id}`, {
@@ -100,7 +140,11 @@ export async function transitionTransfer(
   );
 }
 
-export async function transferProofUrl(secret: string, id: string, actor: string) {
+export async function transferProofUrl(
+  secret: string,
+  id: string,
+  actor: string,
+) {
   const response = await fetch(`/api/book/${secret}/transfer/${id}/proof`, {
     headers: { "x-ledger-actor": actor },
     cache: "no-store",

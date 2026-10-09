@@ -2,7 +2,16 @@ import { readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { beforeAll, afterAll, describe, it, expect } from "vitest";
 import type { PGlite } from "@electric-sql/pglite";
-import { database, read, change, submitProof, transition } from "./database";
+import type { Book } from "../src/lib/types";
+import {
+  database,
+  read,
+  change,
+  submitProof,
+  transition,
+  startSettlement,
+  cancelSettlement,
+} from "./database";
 import { settle, statistics } from "../src/lib/calculations";
 let db: PGlite, secret: string;
 beforeAll(async () => {
@@ -13,15 +22,43 @@ function proofPath(bookSecret: string, eventId: string, settlementId: string) {
   return `${createHash("sha256").update(bookSecret).digest("hex")}/${eventId}/${settlementId}/${crypto.randomUUID()}.webp`;
 }
 
+async function formalize(
+  target: PGlite,
+  bookSecret: string,
+  book: Book,
+  firstId = crypto.randomUUID(),
+) {
+  const transfers = settle(
+    statistics(book.events[0].members, book.expenses, book.payments),
+  );
+  const plan = transfers.map((transfer, index) => ({
+    ...transfer,
+    id: index === 0 ? firstId : crypto.randomUUID(),
+  }));
+  await startSettlement(target, {
+    secret: bookSecret,
+    revision: book.revision,
+    actor: book.members[0].id,
+    eventId: book.events[0].id,
+    plan,
+  });
+  return { book: await read(target, bookSecret), plan };
+}
+
 describe("轉帳確認 migration / PostgreSQL RPC", () => {
   it("上傳證明後等待確認，手動確認會清空證明並排入刪除", async () => {
     const isolated = await database();
     try {
       let book = await read(isolated.db, isolated.secret);
-      const transfer = settle(
-        statistics(book.events[0].members, book.expenses, book.payments),
-      )[0];
       const settlementId = crypto.randomUUID();
+      const formal = await formalize(
+        isolated.db,
+        isolated.secret,
+        book,
+        settlementId,
+      );
+      book = formal.book;
+      const transfer = formal.plan[0];
       const path = proofPath(isolated.secret, book.events[0].id, settlementId);
       await submitProof(isolated.db, {
         secret: isolated.secret,
@@ -78,7 +115,9 @@ describe("轉帳確認 migration / PostgreSQL RPC", () => {
         action: "confirm",
       });
       book = await read(isolated.db, isolated.secret);
-      expect(book.payments[0]).toMatchObject({
+      expect(
+        book.payments.find((payment) => payment.id === settlementId),
+      ).toMatchObject({
         status: "confirmed",
         confirmation_method: "manual",
       });
@@ -104,10 +143,15 @@ describe("轉帳確認 migration / PostgreSQL RPC", () => {
     const isolated = await database();
     try {
       let book = await read(isolated.db, isolated.secret);
-      const transfer = settle(
-        statistics(book.events[0].members, book.expenses, book.payments),
-      )[0];
       const settlementId = crypto.randomUUID();
+      const formal = await formalize(
+        isolated.db,
+        isolated.secret,
+        book,
+        settlementId,
+      );
+      book = formal.book;
+      const transfer = formal.plan[0];
       const oldPath = proofPath(
         isolated.secret,
         book.events[0].id,
@@ -144,7 +188,9 @@ describe("轉帳確認 migration / PostgreSQL RPC", () => {
         ).rows[0].count,
       ).toBe(0);
       book = await read(isolated.db, isolated.secret);
-      expect(book.payments[0].status).toBe("disputed");
+      expect(
+        book.payments.find((payment) => payment.id === settlementId)?.status,
+      ).toBe("disputed");
       const newPath = proofPath(
         isolated.secret,
         book.events[0].id,
@@ -162,8 +208,11 @@ describe("轉帳確認 migration / PostgreSQL RPC", () => {
         path: newPath,
       });
       book = await read(isolated.db, isolated.secret);
-      expect(book.payments[0].status).toBe("awaiting_confirmation");
-      expect(new Date(book.payments[0].paid_at!).getTime()).toBeGreaterThan(
+      const replaced = book.payments.find(
+        (payment) => payment.id === settlementId,
+      )!;
+      expect(replaced.status).toBe("awaiting_confirmation");
+      expect(new Date(replaced.paid_at!).getTime()).toBeGreaterThan(
         Date.now() - 60_000,
       );
       const queued = await isolated.db.query<{ exists: boolean }>(
@@ -179,7 +228,9 @@ describe("轉帳確認 migration / PostgreSQL RPC", () => {
         action: "confirm",
       });
       expect(
-        (await read(isolated.db, isolated.secret)).payments[0].status,
+        (await read(isolated.db, isolated.secret)).payments.find(
+          (payment) => payment.id === settlementId,
+        )?.status,
       ).toBe("confirmed");
     } finally {
       await isolated.db.close();
@@ -190,10 +241,15 @@ describe("轉帳確認 migration / PostgreSQL RPC", () => {
     const isolated = await database();
     try {
       let book = await read(isolated.db, isolated.secret);
-      const transfer = settle(
-        statistics(book.events[0].members, book.expenses, book.payments),
-      )[0];
       const settlementId = crypto.randomUUID();
+      const formal = await formalize(
+        isolated.db,
+        isolated.secret,
+        book,
+        settlementId,
+      );
+      book = formal.book;
+      const transfer = formal.plan[0];
       const path = proofPath(isolated.secret, book.events[0].id, settlementId);
       await submitProof(isolated.db, {
         secret: isolated.secret,
@@ -219,7 +275,9 @@ describe("轉帳確認 migration / PostgreSQL RPC", () => {
       expect(first.rows[0].count).toBe(1);
       expect(second.rows[0].count).toBe(0);
       book = await read(isolated.db, isolated.secret);
-      expect(book.payments[0]).toMatchObject({
+      expect(
+        book.payments.find((payment) => payment.id === settlementId),
+      ).toMatchObject({
         status: "auto_confirmed",
         confirmation_method: "auto",
       });
@@ -246,20 +304,22 @@ describe("轉帳確認 migration / PostgreSQL RPC", () => {
       );
       await isolated.db.query(
         `insert into ledger.settlements(
-          id,event_id,from_id,to_id,amount,status,paid_at,proof_storage_path,
+          id,event_id,from_id,to_id,amount,status,paid_at,proof_storage_path,snapshot_id,
           confirmed_at,confirmation_method
-        ) values($1,$2,$3,$4,1,'awaiting_confirmation',now(),$5,null,null)`,
+        ) values($1,$2,$3,$4,1,'awaiting_confirmation',now(),$5,$6,null,null)`,
         [
           deletedId,
           book.events[0].id,
           book.events[0].members[0],
           book.events[0].members[1],
           deletedPath,
+          book.events[0].settlement_snapshot_id,
         ],
       );
-      await isolated.db.query("delete from ledger.settlements where id=$1", [
-        deletedId,
-      ]);
+      await isolated.db.exec(
+        `select set_config('ledger.cancel_snapshot', '${book.events[0].settlement_snapshot_id}', true);
+         delete from ledger.settlements where id='${deletedId}';`,
+      );
       expect(
         (
           await isolated.db.query<{ queued: boolean }>(
@@ -271,10 +331,11 @@ describe("轉帳確認 migration / PostgreSQL RPC", () => {
 
       // A fresh pending proof is removed by the settlement trigger when its
       // owning event is hard-deleted. All related rows cascade as one unit.
-      const next = settle(
-        statistics(book.events[0].members, book.expenses, book.payments),
-      )[0];
-      const nextId = crypto.randomUUID();
+      const next = book.payments.find(
+        (payment) =>
+          payment.status === "pending_payment" && payment.id !== settlementId,
+      )!;
+      const nextId = next.id;
       const nextPath = proofPath(isolated.secret, book.events[0].id, nextId);
       await submitProof(isolated.db, {
         secret: isolated.secret,
@@ -553,7 +614,9 @@ describe("真實 migration / PostgreSQL RPC", () => {
         { ...original, name: "海底撈", note: "閃身步" },
       );
       book = await read(isolated.db, isolated.secret);
-      expect(book.expenses.find((expense) => expense.id === original.id)).toMatchObject({
+      expect(
+        book.expenses.find((expense) => expense.id === original.id),
+      ).toMatchObject({
         name: "海底撈",
         note: "閃身步",
       });
@@ -608,10 +671,15 @@ describe("真實 migration / PostgreSQL RPC", () => {
         ),
       ).rejects.toThrow("尚未完成");
 
-      const firstTransfer = settle(
-        statistics(event.members, book.expenses, book.payments),
-      )[0];
       const settlementId = crypto.randomUUID();
+      const formal = await formalize(
+        isolated.db,
+        isolated.secret,
+        book,
+        settlementId,
+      );
+      book = formal.book;
+      const firstTransfer = formal.plan[0];
       const path = proofPath(isolated.secret, event.id, settlementId);
       await submitProof(isolated.db, {
         secret: isolated.secret,
@@ -645,22 +713,30 @@ describe("真實 migration / PostgreSQL RPC", () => {
         action: "confirm",
       });
       book = await read(isolated.db, isolated.secret);
-      let remaining = settle(
-        statistics(event.members, book.expenses, book.payments),
-      );
-      while (remaining.length) {
-        await change(
-          isolated.db,
-          isolated.secret,
-          book.revision,
-          actor,
-          "payment.add",
-          { event_id: event.id, ...remaining[0] },
-        );
+      for (const payment of book.payments.filter(
+        (candidate) => candidate.status === "pending_payment",
+      )) {
+        const nextPath = proofPath(isolated.secret, event.id, payment.id);
+        await submitProof(isolated.db, {
+          secret: isolated.secret,
+          revision: book.revision,
+          actor: payment.from_id,
+          eventId: event.id,
+          fromId: payment.from_id,
+          toId: payment.to_id,
+          amount: payment.amount,
+          settlementId: payment.id,
+          path: nextPath,
+        });
         book = await read(isolated.db, isolated.secret);
-        remaining = settle(
-          statistics(event.members, book.expenses, book.payments),
-        );
+        await transition(isolated.db, {
+          secret: isolated.secret,
+          revision: book.revision,
+          actor: payment.to_id,
+          settlementId: payment.id,
+          action: "confirm",
+        });
+        book = await read(isolated.db, isolated.secret);
       }
       await change(
         isolated.db,
@@ -870,6 +946,22 @@ describe("真實 migration / PostgreSQL RPC", () => {
       expect(
         book.members.filter((member) => member.member_type === "fixed"),
       ).toHaveLength(6);
+      await startSettlement(isolated.db, {
+        secret: isolated.secret,
+        revision: book.revision,
+        actor,
+        eventId,
+        plan: guestTransfers.map((transfer) => ({
+          ...transfer,
+          id: crypto.randomUUID(),
+        })),
+      });
+      book = await read(isolated.db, isolated.secret);
+      expect(
+        book.payments
+          .filter((payment) => payment.event_id === eventId)
+          .every((payment) => payment.status === "record_only"),
+      ).toBe(true);
       await change(
         isolated.db,
         isolated.secret,
@@ -886,7 +978,7 @@ describe("真實 migration / PostgreSQL RPC", () => {
       );
       expect(
         book.payments.filter((payment) => payment.event_id === eventId),
-      ).toEqual([]);
+      ).toHaveLength(2);
     } finally {
       await isolated.db.close();
     }
@@ -921,45 +1013,113 @@ describe("真實 migration / PostgreSQL RPC", () => {
       ).reduce((s, x) => s + x.paid, 0),
     ).toBe(before);
   });
-  it("實際寫入轉帳、重複送出被拒、全部結清", async () => {
-    let b = await read(db, secret);
-    let ts = settle(
-      statistics(
-        b.members.map((m) => m.id),
-        b.expenses,
-        b.payments,
-      ),
-    );
-    while (ts.length) {
-      const rev = b.revision;
-      const data = { event_id: b.events[0].id, ...ts[0] };
-      await change(db, secret, rev, b.members[0].id, "payment.add", data);
-      await expect(
-        change(db, secret, rev, b.members[0].id, "payment.add", data),
-      ).rejects.toThrow("conflict");
-      b = await read(db, secret);
-      ts = settle(
-        statistics(
-          b.members.map((m) => m.id),
-          b.expenses,
-          b.payments,
-        ),
+  it("正式結算原子建立，重複送出被拒且金額固定", async () => {
+    const isolated = await database();
+    try {
+      const before = await read(isolated.db, isolated.secret);
+      const transfers = settle(
+        statistics(before.events[0].members, before.expenses, before.payments),
       );
+      const plan = transfers.map((transfer) => ({
+        ...transfer,
+        id: crypto.randomUUID(),
+      }));
+      await startSettlement(isolated.db, {
+        secret: isolated.secret,
+        revision: before.revision,
+        actor: before.members[0].id,
+        eventId: before.events[0].id,
+        plan,
+      });
+      await expect(
+        startSettlement(isolated.db, {
+          secret: isolated.secret,
+          revision: before.revision,
+          actor: before.members[0].id,
+          eventId: before.events[0].id,
+          plan,
+        }),
+      ).rejects.toThrow("conflict");
+      const after = await read(isolated.db, isolated.secret);
+      expect(after.events[0].settlement_state).toBe("locked");
+      expect(after.payments).toHaveLength(plan.length);
+      expect(
+        statistics(
+          after.events[0].members,
+          after.expenses,
+          after.payments,
+        ).every((row) => row.remaining === 0),
+      ).toBe(true);
+      await expect(
+        change(
+          isolated.db,
+          isolated.secret,
+          after.revision,
+          after.members[0].id,
+          "expense.save",
+          { ...after.expenses[0], amount: after.expenses[0].amount + 1 },
+        ),
+      ).rejects.toThrow("帳目已鎖定");
+    } finally {
+      await isolated.db.close();
     }
-    expect(b.payments.length).toBeGreaterThan(0);
-    expect(
-      statistics(
-        b.members.map((m) => m.id),
-        b.expenses,
-        b.payments,
-      ).every((x) => x.remaining === 0),
-    ).toBe(true);
+  });
+  it("尚未提交付款可取消結算；提交後不可取消或重複提交", async () => {
+    const isolated = await database();
+    try {
+      let book = await read(isolated.db, isolated.secret);
+      let formal = await formalize(isolated.db, isolated.secret, book);
+      book = formal.book;
+      await cancelSettlement(isolated.db, {
+        secret: isolated.secret,
+        revision: book.revision,
+        actor: book.members[0].id,
+        eventId: book.events[0].id,
+      });
+      book = await read(isolated.db, isolated.secret);
+      expect(book.events[0]).toMatchObject({
+        settlement_state: "draft",
+        settlement_snapshot_id: null,
+      });
+      expect(book.payments).toHaveLength(0);
+
+      formal = await formalize(isolated.db, isolated.secret, book);
+      book = formal.book;
+      const transfer = formal.plan[0];
+      const path = proofPath(isolated.secret, book.events[0].id, transfer.id);
+      const submission = {
+        secret: isolated.secret,
+        revision: book.revision,
+        actor: transfer.from_id,
+        eventId: book.events[0].id,
+        fromId: transfer.from_id,
+        toId: transfer.to_id,
+        amount: transfer.amount,
+        settlementId: transfer.id,
+        path,
+      };
+      await submitProof(isolated.db, submission);
+      book = await read(isolated.db, isolated.secret);
+      await expect(
+        cancelSettlement(isolated.db, {
+          secret: isolated.secret,
+          revision: book.revision,
+          actor: book.members[0].id,
+          eventId: book.events[0].id,
+        }),
+      ).rejects.toThrow("已有付款提交");
+      await expect(
+        submitProof(isolated.db, { ...submission, revision: book.revision }),
+      ).rejects.toThrow("已提交");
+    } finally {
+      await isolated.db.close();
+    }
   });
   it("deployment SQL verifies RLS, grants and private publications", async () => {
     const checks = await db.query<{ check_name: string; passed: boolean }>(
       await readFile("supabase/verify.sql", "utf8"),
     );
-    expect(checks.rows).toHaveLength(11);
+    expect(checks.rows).toHaveLength(13);
     for (const check of checks.rows)
       expect(check.passed, check.check_name).toBe(true);
   });
@@ -1001,33 +1161,68 @@ describe("真實 migration / PostgreSQL RPC", () => {
     }
   });
   it("anon can edit with the secret and cannot edit without it", async () => {
-    const b = await read(db, secret);
-    await db.exec("set role anon");
+    const isolated = await database();
     try {
+      let b = await read(isolated.db, isolated.secret);
+      const eventId = crypto.randomUUID();
+      await change(
+        isolated.db,
+        isolated.secret,
+        b.revision,
+        b.members[0].id,
+        "event.save",
+        {
+          id: eventId,
+          name: "匿名權限測試",
+          start_date: "2026-10-09",
+          end_date: "",
+          note: "",
+          members: [b.members[0].id],
+        },
+      );
+      b = await read(isolated.db, isolated.secret);
+      await isolated.db.exec("set role anon");
       await expect(
         change(
-          db,
+          isolated.db,
           "a".repeat(64),
           b.revision,
           b.members[0].id,
           "event.archive",
-          { event_id: b.events[0].id, archived: true },
+          { event_id: eventId, archived: true },
         ),
       ).rejects.toThrow("invalid_link");
-      await change(db, secret, b.revision, b.members[0].id, "event.archive", {
-        event_id: b.events[0].id,
-        archived: true,
-      });
-      const updated = await read(db, secret);
-      expect(updated.events[0].archived).toBe(true);
+      await change(
+        isolated.db,
+        isolated.secret,
+        b.revision,
+        b.members[0].id,
+        "event.archive",
+        {
+          event_id: eventId,
+          archived: true,
+        },
+      );
+      const updated = await read(isolated.db, isolated.secret);
+      expect(
+        updated.events.find((event) => event.id === eventId)?.archived,
+      ).toBe(true);
       await expect(
-        change(db, secret, updated.revision, b.members[0].id, "event.archive", {
-          event_id: b.events[0].id,
-          archived: false,
-        }),
+        change(
+          isolated.db,
+          isolated.secret,
+          updated.revision,
+          b.members[0].id,
+          "event.archive",
+          {
+            event_id: eventId,
+            archived: false,
+          },
+        ),
       ).rejects.toThrow("唯讀");
     } finally {
-      await db.exec("reset role");
+      await isolated.db.exec("reset role");
+      await isolated.db.close();
     }
   });
   it("seed returns the secret as its final result and isolates different books", async () => {

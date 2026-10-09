@@ -22,7 +22,11 @@ import { money } from "@/lib/types";
 import type { Member, Payment, Transfer } from "@/lib/types";
 import { Person } from "./forms";
 
-function PeopleAndAmount({ payer, recipient, amount }: {
+function PeopleAndAmount({
+  payer,
+  recipient,
+  amount,
+}: {
   payer: Member;
   recipient: Member;
   amount: number;
@@ -39,7 +43,10 @@ function PeopleAndAmount({ payer, recipient, amount }: {
   );
 }
 
-function BankPanel({ recipient, onFeedback }: {
+function BankPanel({
+  recipient,
+  onFeedback,
+}: {
   recipient: Member;
   onFeedback: (message: string) => void;
 }) {
@@ -65,7 +72,9 @@ function BankPanel({ recipient, onFeedback }: {
   if (!hasBankDetails(recipient))
     return (
       <div className="bank-panel bank-missing">
-        <span>{recipient.icon} {recipient.name}</span>
+        <span>
+          {recipient.icon} {recipient.name}
+        </span>
         <p>
           {recipient.member_type === "guest"
             ? "此臨時成員未設定匯款資料"
@@ -77,9 +86,13 @@ function BankPanel({ recipient, onFeedback }: {
     <div className="bank-panel">
       <div className="bank-details">
         <span>收款銀行</span>
-        <strong>{recipient.bank_code} {recipient.bank_name}</strong>
+        <strong>
+          {recipient.bank_code} {recipient.bank_name}
+        </strong>
         <span>帳號</span>
-        <strong className="masked-account">{maskBankAccount(recipient.bank_account)}</strong>
+        <strong className="masked-account">
+          {maskBankAccount(recipient.bank_account)}
+        </strong>
       </div>
       <div className="bank-actions">
         <button
@@ -104,6 +117,7 @@ export function TransferCard({
   busy,
   onStartPayment,
   onFeedback,
+  state = "pending",
 }: {
   index: number;
   transfer: Transfer;
@@ -113,23 +127,46 @@ export function TransferCard({
   busy: boolean;
   onStartPayment: () => void;
   onFeedback: (message: string) => void;
+  state?: "preview" | "pending" | "record_only";
 }) {
   const guestInvolved =
-    payer.member_type === "guest" || recipient.member_type === "guest";
+    state === "record_only" ||
+    payer.member_type === "guest" ||
+    recipient.member_type === "guest";
   return (
-    <article className="transfer" data-testid="transfer-card" aria-label={`${payer.name}匯款給${recipient.name}`}>
-      <span className="transfer-index">{String(index + 1).padStart(2, "0")}</span>
-      <PeopleAndAmount payer={payer} recipient={recipient} amount={transfer.amount} />
+    <article
+      className="transfer"
+      data-testid="transfer-card"
+      aria-label={`${payer.name}匯款給${recipient.name}`}
+    >
+      <span className="transfer-index">
+        {String(index + 1).padStart(2, "0")}
+      </span>
+      <PeopleAndAmount
+        payer={payer}
+        recipient={recipient}
+        amount={transfer.amount}
+      />
       <BankPanel recipient={recipient} onFeedback={onFeedback} />
       <div className="transfer-state pending">
         <span className="status-pill">
-          {guestInvolved ? "記帳資料" : settlementStatusLabel.pending_payment}
+          {state === "preview"
+            ? "結算預覽"
+            : guestInvolved
+              ? "記帳資料"
+              : settlementStatusLabel.pending_payment}
         </span>
-        {guestInvolved ? (
+        {state === "preview" ? (
+          <p>開始正式結算後才可提交付款。</p>
+        ) : guestInvolved ? (
           <p>臨時成員款項僅供記帳，請自行確認。</p>
         ) : actor === payer.id ? (
-          <button className="primary transfer-action" disabled={busy} onClick={onStartPayment}>
-            <Upload size={17} /> 我已轉帳
+          <button
+            className="primary transfer-action"
+            disabled={busy}
+            onClick={onStartPayment}
+          >
+            <Upload size={17} /> 我已完成匯款
           </button>
         ) : (
           <p>等待{payer.name}完成轉帳</p>
@@ -149,6 +186,7 @@ export function SettlementCard({
   onConfirm,
   onDispute,
   onReupload,
+  onWithdraw,
 }: {
   payment: Payment;
   payer: Member;
@@ -159,9 +197,12 @@ export function SettlementCard({
   onConfirm: () => void;
   onDispute: () => void;
   onReupload: () => void;
+  onWithdraw: () => void;
 }) {
-  const active = payment.status === "awaiting_confirmation" || payment.status === "disputed";
-  const completed = payment.status === "confirmed" || payment.status === "auto_confirmed";
+  const active =
+    payment.status === "awaiting_confirmation" || payment.status === "disputed";
+  const completed =
+    payment.status === "confirmed" || payment.status === "auto_confirmed";
   return (
     <article
       className={`transfer lifecycle ${payment.status}`}
@@ -169,25 +210,47 @@ export function SettlementCard({
       aria-label={`${payer.name}匯款給${recipient.name}`}
     >
       <span className="transfer-index">
-        {payment.status === "disputed" ? <AlertTriangle size={18} /> : <Check size={18} />}
+        {payment.status === "disputed" ? (
+          <AlertTriangle size={18} />
+        ) : (
+          <Check size={18} />
+        )}
       </span>
-      <PeopleAndAmount payer={payer} recipient={recipient} amount={payment.amount} />
+      <PeopleAndAmount
+        payer={payer}
+        recipient={recipient}
+        amount={payment.amount}
+      />
       <div className="transfer-state-detail">
-        <span className={`status-pill ${payment.status}`}>{settlementStatusLabel[payment.status]}</span>
+        <span className={`status-pill ${payment.status}`}>
+          {settlementStatusLabel[payment.status]}
+        </span>
         {payment.status === "awaiting_confirmation" && (
           <>
-            <p>{payer.name}已標記完成轉帳，等待{recipient.name}確認。</p>
+            <p>
+              {payer.name}已標記完成轉帳，等待{recipient.name}確認。
+            </p>
             <dl className="transfer-times">
-              <div><dt>付款時間</dt><dd>{formatTransferTime(payment.paid_at)}</dd></div>
+              <div>
+                <dt>付款時間</dt>
+                <dd>{formatTransferTime(payment.paid_at)}</dd>
+              </div>
               <div>
                 <dt>距離自動確認</dt>
-                <dd><Clock3 size={14} /> {payment.paid_at ? remainingConfirmationTime(payment.paid_at) : "—"}</dd>
+                <dd>
+                  <Clock3 size={14} />{" "}
+                  {payment.paid_at
+                    ? remainingConfirmationTime(payment.paid_at)
+                    : "—"}
+                </dd>
               </div>
             </dl>
           </>
         )}
         {payment.status === "disputed" && (
-          <p className="dispute-message">收款人表示尚未收到款項，自動確認已暫停。</p>
+          <p className="dispute-message">
+            收款人表示尚未收到款項，自動確認已暫停。
+          </p>
         )}
         {completed && (
           <>
@@ -197,8 +260,14 @@ export function SettlementCard({
                 : `${recipient.name}已確認收到 ${money(payment.amount)}。`}
             </p>
             <dl className="transfer-times">
-              <div><dt>付款時間</dt><dd>{formatTransferTime(payment.paid_at)}</dd></div>
-              <div><dt>完成時間</dt><dd>{formatTransferTime(payment.confirmed_at)}</dd></div>
+              <div>
+                <dt>付款時間</dt>
+                <dd>{formatTransferTime(payment.paid_at)}</dd>
+              </div>
+              <div>
+                <dt>完成時間</dt>
+                <dd>{formatTransferTime(payment.confirmed_at)}</dd>
+              </div>
               <div>
                 <dt>確認方式</dt>
                 <dd>
@@ -219,6 +288,15 @@ export function SettlementCard({
           <button className="secondary" disabled={busy} onClick={onViewProof}>
             <Eye size={17} /> 查看轉帳證明
           </button>
+          {payment.status === "awaiting_confirmation" && actor === payer.id && (
+            <button
+              className="secondary warning"
+              disabled={busy}
+              onClick={onWithdraw}
+            >
+              撤回付款申請
+            </button>
+          )}
         </div>
       )}
       {payment.status === "awaiting_confirmation" && actor === recipient.id && (
@@ -226,7 +304,13 @@ export function SettlementCard({
           <button className="primary" disabled={busy} onClick={onConfirm}>
             <Check size={17} /> 確認收到
           </button>
-          <button className="secondary warning" disabled={busy} onClick={onDispute}>尚未收到</button>
+          <button
+            className="secondary warning"
+            disabled={busy}
+            onClick={onDispute}
+          >
+            尚未收到
+          </button>
         </div>
       )}
       {payment.status === "disputed" && (

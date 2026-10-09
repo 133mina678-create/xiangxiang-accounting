@@ -1,7 +1,7 @@
 -- Read-only checks. Run in SQL Editor; every passed column should be true.
 -- Does not display workspace identifiers, book secrets or user data.
-select '9 internal tables exist with RLS' as check_name,
- (select count(*)=9 and bool_and(c.relrowsecurity)
+select '10 internal tables exist with RLS' as check_name,
+ (select count(*)=10 and bool_and(c.relrowsecurity)
   from pg_class c join pg_namespace n on n.oid=c.relnamespace
   where n.nspname='ledger' and c.relkind='r') as passed
 union all
@@ -30,6 +30,20 @@ select 'deferred split trigger is private and definer-secured',
 union all
 select 'internal tables are not in Realtime publications',
  not exists(select 1 from pg_publication_tables where schemaname='ledger')
+union all
+select 'settlement snapshot RPCs require the secret capability',
+ (select count(*)=2 and bool_and(
+   p.prosecdef and p.proconfig @> array['search_path=""']
+   and has_function_privilege('anon',p.oid,'EXECUTE')
+  ) from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+  where n.nspname='public' and p.proname in ('start_settlement','cancel_settlement'))
+union all
+select 'settlement lock triggers are installed and private',
+ (select count(*) from pg_trigger
+  where tgname in ('expenses_settlement_lock','expense_splits_settlement_lock',
+   'event_members_settlement_lock','events_settlement_lock') and not tgisinternal)=4
+ and not has_function_privilege('anon',to_regprocedure('ledger.guard_locked_event_data()'),'EXECUTE')
+ and not has_function_privilege('anon',to_regprocedure('ledger.guard_locked_event_details()'),'EXECUTE')
 union all
 select 'transfer proof RPCs are server-only',
  (select count(*)=8 and bool_and(

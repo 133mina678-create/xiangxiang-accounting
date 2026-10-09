@@ -196,3 +196,23 @@ export function settle(
   );
   return best ?? [];
 }
+
+export function transfersForMember<T extends Transfer>(
+  rows: T[],
+  memberId: string,
+) {
+  return rows.filter(
+    (row) => row.from_id === memberId || row.to_id === memberId,
+  );
+}
+
+export function transferTotalsForMember(rows: Transfer[], memberId: string) {
+  return rows.reduce(
+    (totals, row) => {
+      if (row.from_id === memberId) totals.outgoing += row.amount;
+      if (row.to_id === memberId) totals.incoming += row.amount;
+      return totals;
+    },
+    { outgoing: 0, incoming: 0 },
+  );
+}

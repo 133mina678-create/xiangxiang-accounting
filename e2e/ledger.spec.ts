@@ -79,7 +79,9 @@ test("手機完整流程、雙人同步、衝突、復原、自訂與份數、�
   await expect(friend.getByTestId("event-total")).toHaveText("NT$ 6,890");
   // Both edit the same record. Polling must not advance the form's base revision.
   await page.getByRole("button", { name: /海底撈/ }).click();
-  await expect(page.getByRole("dialog").getByText("閃身步", { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("dialog").getByText("閃身步", { exact: true }),
+  ).toBeVisible();
   await page.getByRole("button", { name: "修改", exact: true }).click();
   await friend.getByRole("button", { name: /海底撈/ }).click();
   await friend.getByRole("button", { name: "修改", exact: true }).click();
@@ -164,8 +166,27 @@ test("手機完整流程、雙人同步、衝突、復原、自訂與份數、�
       .getByRole("button", { name, exact: false })
       .click();
   };
+  await page.getByRole("button", { name: "只看我的", exact: true }).click();
+  await page.getByLabel("查看成員").selectOption({
+    label: (
+      await page.getByLabel("查看成員").locator("option").allTextContents()
+    ).find((label) => label.includes(transferPayer))!,
+  });
+  await expect(page.getByText("本次應付", { exact: true })).toBeVisible();
+  await expect(
+    page
+      .getByTestId("transfer-card")
+      .filter({ hasText: transferPayer })
+      .first(),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "全部結算", exact: true }).click();
+  await page.getByRole("button", { name: "開始結算", exact: true }).click();
+  await page.getByRole("button", { name: "確認開始結算", exact: true }).click();
+  await expect(
+    page.getByText("正式結算已鎖定", { exact: false }),
+  ).toBeVisible();
   await selectIdentity(transferPayer);
-  await pendingCard.getByRole("button", { name: "我已轉帳" }).click();
+  await pendingCard.getByRole("button", { name: "我已完成匯款" }).click();
   const proofPng = Buffer.from(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9ZQMcAAAAASUVORK5CYII=",
     "base64",
@@ -269,7 +290,9 @@ test("手機完整流程、雙人同步、衝突、復原、自訂與份數、�
   await page.getByRole("button", { name: "儲存消費", exact: true }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await page.getByRole("button", { name: "最後怎麼付？", exact: true }).click();
-  await expect(page.getByText("本次活動已全部結清！")).toBeVisible();
+  await page.getByRole("button", { name: "開始結算", exact: true }).click();
+  await page.getByRole("button", { name: "確認開始結算", exact: true }).click();
+  await expect(page.getByText("目前沒有需要結算的費用")).toBeVisible();
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= window.innerWidth,
@@ -292,7 +315,9 @@ test("手機完整流程、雙人同步、衝突、復原、自訂與份數、�
   await page.getByRole("button", { name: "新增消費", exact: true }).click();
   await page.getByLabel("消費名稱", { exact: true }).fill("Uber 去高鐵站");
   await page.getByLabel("消費金額", { exact: true }).fill("100");
-  await page.getByLabel("備註（選填）", { exact: true }).fill("星醬先幫大家叫車");
+  await page
+    .getByLabel("備註（選填）", { exact: true })
+    .fill("星醬先幫大家叫車");
   await page
     .getByRole("group", { name: "誰先付款？" })
     .getByRole("button", { name: /小明/ })
@@ -309,6 +334,8 @@ test("手機完整流程、雙人同步、衝突、復原、自訂與份數、�
   await page.getByRole("button", { name: "統計", exact: true }).click();
   await expect(page.getByText("小明", { exact: true }).first()).toBeVisible();
   await page.getByRole("button", { name: "最後怎麼付？", exact: true }).click();
+  await page.getByRole("button", { name: "開始結算", exact: true }).click();
+  await page.getByRole("button", { name: "確認開始結算", exact: true }).click();
   const guestTransfer = page
     .getByTestId("transfer-card")
     .filter({ hasText: "小明" })
@@ -316,7 +343,7 @@ test("手機完整流程、雙人同步、衝突、復原、自訂與份數、�
   await expect(guestTransfer).toContainText("記帳資料");
   await expect(guestTransfer).toContainText("臨時成員款項僅供記帳");
   await expect(
-    guestTransfer.getByRole("button", { name: "我已轉帳" }),
+    guestTransfer.getByRole("button", { name: "我已完成匯款" }),
   ).toHaveCount(0);
   await page.getByRole("button", { name: "帳目", exact: true }).click();
   await page.getByRole("button", { name: "結束活動", exact: true }).click();

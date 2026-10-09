@@ -1,6 +1,6 @@
 import { PGlite } from "@electric-sql/pglite";
 import { readFile, readdir } from "node:fs/promises";
-import type { Book } from "../src/lib/types";
+import type { Book, Transfer } from "../src/lib/types";
 export async function database() {
   const db = new PGlite();
   await db.exec(`
@@ -82,6 +82,40 @@ export async function submitProof(
     ],
   );
 }
+export async function startSettlement(
+  db: PGlite,
+  input: {
+    secret: string;
+    revision: number;
+    actor: string;
+    eventId: string;
+    plan: (Transfer & { id: string })[];
+  },
+) {
+  await db.query("select public.start_settlement($1,$2,$3,$4,$5)", [
+    input.secret,
+    input.revision,
+    input.actor,
+    input.eventId,
+    JSON.stringify(input.plan),
+  ]);
+}
+export async function cancelSettlement(
+  db: PGlite,
+  input: {
+    secret: string;
+    revision: number;
+    actor: string;
+    eventId: string;
+  },
+) {
+  await db.query("select public.cancel_settlement($1,$2,$3,$4)", [
+    input.secret,
+    input.revision,
+    input.actor,
+    input.eventId,
+  ]);
+}
 export async function transition(
   db: PGlite,
   input: {
@@ -89,7 +123,7 @@ export async function transition(
     revision: number;
     actor: string;
     settlementId: string;
-    action: "confirm" | "dispute";
+    action: "confirm" | "dispute" | "withdraw";
   },
 ) {
   await db.query("select public.transition_transfer($1,$2,$3,$4,$5)", [

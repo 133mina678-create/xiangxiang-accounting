@@ -23,8 +23,15 @@ import {
   mutate,
   submitTransferProof,
   transitionTransfer,
+  startSettlement,
+  cancelSettlement,
 } from "@/lib/api";
-import { settle, statistics } from "@/lib/calculations";
+import {
+  settle,
+  statistics,
+  transfersForMember,
+  transferTotalsForMember,
+} from "@/lib/calculations";
 import { transferRecipient } from "@/lib/payment-info";
 import { categories, money } from "@/lib/types";
 import type {
@@ -59,8 +66,9 @@ type Dialog =
   | {
       kind: "transfer-confirm";
       payment: Payment;
-      action: "confirm" | "dispute";
+      action: "confirm" | "dispute" | "withdraw";
     }
+  | { kind: "settlement-confirm"; action: "start" | "cancel" }
   | { kind: "settings" }
   | null;
 export default function Ledger({ secret }: { secret: string }) {
@@ -77,7 +85,9 @@ export default function Ledger({ secret }: { secret: string }) {
     [payer, setPayer] = useState(""),
     [category, setCategory] = useState(""),
     [grouped, setGrouped] = useState(true),
-    [statsDay, setStatsDay] = useState("");
+    [statsDay, setStatsDay] = useState(""),
+    [settlementView, setSettlementView] = useState<"all" | "mine">("all"),
+    [settlementPerson, setSettlementPerson] = useState("");
   const [undo, setUndo] = useState<{ id: string; event_id: string } | null>(
     null,
   );
@@ -189,6 +199,8 @@ export default function Ledger({ secret }: { secret: string }) {
     setPayer("");
     setCategory("");
     setStatsDay("");
+    setSettlementView("all");
+    setSettlementPerson("");
   };
   const copy = async () => {
     try {
@@ -223,10 +235,15 @@ export default function Ledger({ secret }: { secret: string }) {
   );
   const event = book.events.find((e) => e.id === eventId);
   const eventIsClosed = event?.status === "closed";
+  const settlementLocked = event?.settlement_state === "locked";
+  const eventEditable = Boolean(event && !eventIsClosed && !settlementLocked);
   const expenses = book.expenses.filter(
     (e) => e.event_id === eventId && !e.deleted_at,
   );
   const payments = book.payments.filter((p) => p.event_id === eventId);
+  const pendingPayments = payments.filter((p) =>
+    ["pending_payment", "record_only"].includes(p.status),
+  );
   const activePayments = payments.filter((p) =>
     ["awaiting_confirmation", "disputed"].includes(p.status),
   );
@@ -251,7 +268,7 @@ export default function Ledger({ secret }: { secret: string }) {
       )
     : [];
   const balances = event ? statistics(event.members, expenses, payments) : [];
-  const transfers = settle(balances);
+  const transfers = settlementLocked ? [] : settle(balances);
   const guestTransfers = transfers.filter(
     (transfer) =>
       member(transfer.from_id).member_type === "guest" ||
@@ -273,6 +290,25 @@ export default function Ledger({ secret }: { secret: string }) {
         payment.status,
       ),
     );
+  const canCancelSettlement =
+    settlementLocked &&
+    payments.every((payment) =>
+      ["pending_payment", "record_only"].includes(payment.status),
+    );
+  const selectedSettlementPerson =
+    event?.members.find((id) => id === settlementPerson) ??
+    event?.members.find((id) => id === actor) ??
+    event?.members[0] ??
+    "";
+  const visibleForPerson = <T extends Transfer>(rows: T[]) =>
+    settlementView === "all"
+      ? rows
+      : transfersForMember(rows, selectedSettlementPerson);
+  const settlementRows: Transfer[] = settlementLocked ? payments : transfers;
+  const personalTotals = transferTotalsForMember(
+    settlementRows,
+    selectedSettlementPerson,
+  );
   const days = [...new Set(expenses.map((e) => e.date))].sort();
   const exportCSV = () => {
     const cell = (s: string) =>
@@ -497,8 +533,17 @@ export default function Ledger({ secret }: { secret: string }) {
                   </span>
                 </div>
               )}
+              {!eventIsClosed && settlementLocked && (
+                <div className="settlement-lock-banner" role="status">
+                  <Lock size={18} />
+                  <span>
+                    <strong>正式結算已開始</strong>
+                    消費與分攤已建立快照，目前帳目為唯讀
+                  </span>
+                </div>
+              )}
               <div className="event-tools">
-                {!eventIsClosed && (
+                {eventEditable && (
                   <button
                     className="text-link"
                     onClick={() => setDialog({ kind: "event", event })}
@@ -516,6 +561,10 @@ export default function Ledger({ secret }: { secret: string }) {
                     className="text-link"
                     disabled={busy}
                     onClick={() => {
+                      if (!settlementLocked && expenses.length > 0) {
+                        setError("請先到「最後怎麼付？」開始正式結算。");
+                        return;
+                      }
                       if (hasUnfinishedPayments) {
                         setError(
                           "目前仍有尚未完成的款項，請完成所有結算後再結束活動。",
@@ -564,7 +613,7 @@ export default function Ledger({ secret }: { secret: string }) {
                 <section>
                   <div className="section-title">
                     <h2>一起花的每一筆</h2>
-                    {!eventIsClosed && (
+                    {eventEditable && (
                       <button
                         className="primary add-expense"
                         onClick={() => setDialog({ kind: "expense" })}
@@ -789,16 +838,131 @@ export default function Ledger({ secret }: { secret: string }) {
                     <span className="settle-symbol">💸</span>
                   </div>
                   <p className="muted">
-                    依目前帳目使用最少筆數結清；完成轉帳後，需由收款人確認。
+                    {settlementLocked
+                      ? "正式結算金額已固定；完成匯款後，需由收款人確認。"
+                      : "目前是即時預覽，消費變動時結算金額也會更新。"}
                   </p>
-                  {(transfers.length > 0 || activePayments.length > 0) && (
+                  <div className="settlement-view-controls">
+                    <div className="segmented" aria-label="結算顯示範圍">
+                      <button
+                        aria-pressed={settlementView === "all"}
+                        onClick={() => setSettlementView("all")}
+                      >
+                        全部結算
+                      </button>
+                      <button
+                        aria-pressed={settlementView === "mine"}
+                        onClick={() => setSettlementView("mine")}
+                      >
+                        只看我的
+                      </button>
+                    </div>
+                    {settlementView === "mine" && (
+                      <label className="compact-label">
+                        查看成員
+                        <select
+                          value={selectedSettlementPerson}
+                          onChange={(e) => setSettlementPerson(e.target.value)}
+                        >
+                          {event.members.map((id) => (
+                            <option key={id} value={id}>
+                              {member(id).icon} {member(id).name}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    )}
+                  </div>
+                  {settlementView === "mine" && selectedSettlementPerson && (
+                    <div className="personal-settlement-summary">
+                      <Person member={member(selectedSettlementPerson)} />
+                      <div>
+                        <span>本次應付</span>
+                        <strong>{money(personalTotals.outgoing)}</strong>
+                      </div>
+                      <div>
+                        <span>本次應收</span>
+                        <strong>{money(personalTotals.incoming)}</strong>
+                      </div>
+                    </div>
+                  )}
+                  {!eventIsClosed && (
+                    <div
+                      className={`settlement-snapshot-panel ${settlementLocked ? "locked" : "preview"}`}
+                    >
+                      <div>
+                        <strong>
+                          {settlementLocked ? "🔒 正式結算已鎖定" : "結算預覽"}
+                        </strong>
+                        <p>
+                          {settlementLocked
+                            ? `建立時間：${event.settlement_started_at ? new Date(event.settlement_started_at).toLocaleString("zh-TW") : "—"}`
+                            : "確認後會固定消費、分攤與轉帳關係。"}
+                        </p>
+                      </div>
+                      {!settlementLocked ? (
+                        expenses.length > 0 && (
+                          <button
+                            className="primary"
+                            disabled={busy}
+                            onClick={() =>
+                              setDialog({
+                                kind: "settlement-confirm",
+                                action: "start",
+                              })
+                            }
+                          >
+                            <Lock size={17} /> 開始結算
+                          </button>
+                        )
+                      ) : canCancelSettlement ? (
+                        <button
+                          className="secondary"
+                          disabled={busy}
+                          onClick={() =>
+                            setDialog({
+                              kind: "settlement-confirm",
+                              action: "cancel",
+                            })
+                          }
+                        >
+                          <RotateCcw size={17} /> 取消結算，返回編輯
+                        </button>
+                      ) : (
+                        <span className="snapshot-note">
+                          已有付款提交，不能取消結算
+                        </span>
+                      )}
+                    </div>
+                  )}
+                  {(settlementRows.length > 0 || activePayments.length > 0) && (
                     <div
                       className="settlement-reminders"
                       aria-label="轉帳狀態提醒"
                     >
-                      <span>待付款 {fixedTransfers.length} 筆</span>
-                      {guestTransfers.length > 0 && (
-                        <span>臨時成員記帳 {guestTransfers.length} 筆</span>
+                      <span>
+                        待付款{" "}
+                        {settlementLocked
+                          ? pendingPayments.filter(
+                              (p) => p.status === "pending_payment",
+                            ).length
+                          : fixedTransfers.length}{" "}
+                        筆
+                      </span>
+                      {(settlementLocked
+                        ? pendingPayments.some(
+                            (p) => p.status === "record_only",
+                          )
+                        : guestTransfers.length > 0) && (
+                        <span>
+                          臨時成員記帳{" "}
+                          {settlementLocked
+                            ? pendingPayments.filter(
+                                (p) => p.status === "record_only",
+                              ).length
+                            : guestTransfers.length}{" "}
+                          筆
+                        </span>
                       )}
                       <span>等待確認 {awaitingCount} 筆</span>
                       <span className={disputedCount ? "has-dispute" : ""}>
@@ -806,10 +970,10 @@ export default function Ledger({ secret }: { secret: string }) {
                       </span>
                     </div>
                   )}
-                  {activePayments.length > 0 && (
+                  {visibleForPerson(activePayments).length > 0 && (
                     <>
                       <h3 className="subheading">付款確認中</h3>
-                      {activePayments.map((payment) => (
+                      {visibleForPerson(activePayments).map((payment) => (
                         <SettlementCard
                           key={payment.id}
                           payment={payment}
@@ -841,79 +1005,132 @@ export default function Ledger({ secret }: { secret: string }) {
                               payment,
                             })
                           }
+                          onWithdraw={() =>
+                            setDialog({
+                              kind: "transfer-confirm",
+                              payment,
+                              action: "withdraw",
+                            })
+                          }
                         />
                       ))}
                     </>
                   )}
-                  {transfers.length ? (
-                    <>
-                      <h3 className="subheading">待付款與記帳資料</h3>
-                      <div className="settle-intro">
-                        固定成員間的款項可使用轉帳確認流程；臨時成員款項只列明金額，請自行確認。
-                      </div>
-                      {transfers.map((t, i) => {
-                        const recipient = transferRecipient(t, book.members);
-                        return (
+                  {settlementLocked &&
+                    visibleForPerson(pendingPayments).length > 0 && (
+                      <>
+                        <h3 className="subheading">待付款與記帳資料</h3>
+                        <div className="settle-intro">
+                          固定成員間的款項可使用轉帳確認流程；臨時成員款項只列明金額，請自行確認。
+                        </div>
+                        {visibleForPerson(pendingPayments).map((payment, i) => {
+                          const recipient = transferRecipient(
+                            payment,
+                            book.members,
+                          );
+                          return (
+                            <TransferCard
+                              key={payment.id}
+                              index={i}
+                              transfer={payment}
+                              payer={member(payment.from_id)}
+                              recipient={recipient}
+                              actor={actor}
+                              busy={busy}
+                              state={
+                                payment.status === "record_only"
+                                  ? "record_only"
+                                  : "pending"
+                              }
+                              onFeedback={setNotice}
+                              onStartPayment={() =>
+                                setDialog({
+                                  kind: "proof-upload",
+                                  transfer: payment,
+                                  payment,
+                                })
+                              }
+                            />
+                          );
+                        })}
+                      </>
+                    )}
+                  {!settlementLocked &&
+                    visibleForPerson(transfers).length > 0 && (
+                      <>
+                        <h3 className="subheading">預覽收付款關係</h3>
+                        {visibleForPerson(transfers).map((transfer, i) => (
                           <TransferCard
-                            key={`${t.from_id}-${t.to_id}`}
+                            key={`${transfer.from_id}-${transfer.to_id}`}
                             index={i}
-                            transfer={t}
-                            payer={member(t.from_id)}
-                            recipient={recipient}
+                            transfer={transfer}
+                            payer={member(transfer.from_id)}
+                            recipient={member(transfer.to_id)}
                             actor={actor}
                             busy={busy}
+                            state="preview"
                             onFeedback={setNotice}
-                            onStartPayment={() =>
-                              setDialog({ kind: "proof-upload", transfer: t })
-                            }
+                            onStartPayment={() => undefined}
                           />
-                        );
-                      })}
-                    </>
-                  ) : activePayments.length ? (
+                        ))}
+                      </>
+                    )}
+                  {settlementLocked &&
+                  !visibleForPerson(pendingPayments).length &&
+                  !visibleForPerson(activePayments).length &&
+                  !visibleForPerson(completedPayments).length ? (
+                    <div className="all-clear">
+                      <span>🎉</span>
+                      <h2>目前沒有需要結算的費用</h2>
+                      <p>正式快照與歷史帳目都已保留。</p>
+                    </div>
+                  ) : settlementLocked &&
+                    !pendingPayments.length &&
+                    activePayments.length ? (
                     <div className="all-clear waiting">
                       <span>🕐</span>
                       <h2>所有款項都已送出</h2>
                       <p>等待收款人確認後，本次活動就會正式結清。</p>
                     </div>
-                  ) : (
+                  ) : settlementLocked &&
+                    !pendingPayments.length &&
+                    !activePayments.length &&
+                    completedPayments.length ? (
                     <div className="all-clear">
                       <span>🎉</span>
-                      <h2>
-                        {expenses.length
-                          ? "本次活動已全部結清！"
-                          : "目前沒有需要結算的費用"}
-                      </h2>
+                      <h2>本次活動已全部結清！</h2>
                       <p>帳目與紀錄都會保留，隨時可以回來看。</p>
                     </div>
-                  )}
+                  ) : null}
                   <div className="balance-check">
                     <span>
-                      剩餘應收{" "}
+                      結算應收{" "}
                       <b>
                         {money(
-                          balances
-                            .filter((x) => x.remaining > 0)
-                            .reduce((s, x) => s + x.remaining, 0),
+                          settlementRows.reduce(
+                            (sum, row) => sum + row.amount,
+                            0,
+                          ),
                         )}
                       </b>
                     </span>
                     <span>
-                      剩餘應付{" "}
+                      結算應付{" "}
                       <b>
                         {money(
-                          -balances
-                            .filter((x) => x.remaining < 0)
-                            .reduce((s, x) => s + x.remaining, 0),
+                          settlementRows.reduce(
+                            (sum, row) => sum + row.amount,
+                            0,
+                          ),
                         )}
                       </b>
                     </span>
                     <span>✓ 金額平衡</span>
                   </div>
-                  {completedPayments.length > 0 && (
+                  {visibleForPerson(completedPayments).length > 0 && (
                     <>
                       <h3 className="subheading">已完成的轉帳</h3>
-                      {completedPayments.map((payment) => (
+                      {visibleForPerson(completedPayments).map((payment) => (
                         <SettlementCard
                           key={payment.id}
                           payment={payment}
@@ -925,12 +1142,13 @@ export default function Ledger({ secret }: { secret: string }) {
                           onConfirm={() => undefined}
                           onDispute={() => undefined}
                           onReupload={() => undefined}
+                          onWithdraw={() => undefined}
                         />
                       ))}
                     </>
                   )}
                   <p className="hint">
-                    已開始或已完成的轉帳不會被重新計算覆蓋；修改舊消費後，若有人多付，系統會另外列出調整轉帳。
+                    正式結算使用不可覆寫的快照。漏記費用應以新的補充結算批次處理，不可修改已有付款紀錄。
                   </p>
                 </section>
               )}
@@ -1017,7 +1235,10 @@ export default function Ledger({ secret }: { secret: string }) {
               );
             const c = categories.find((c) => c[0] === x.category)!;
             return (
-              <Modal title={`${c[1]} ${x.name}`} onClose={() => setDialog(null)}>
+              <Modal
+                title={`${c[1]} ${x.name}`}
+                onClose={() => setDialog(null)}
+              >
                 <p className="detail-amount">{money(x.amount)}</p>
                 <p className="muted">
                   {x.date} · {c[2]} ·{" "}
@@ -1051,7 +1272,7 @@ export default function Ledger({ secret }: { secret: string }) {
                     <p>{x.note}</p>
                   </div>
                 )}
-                {!eventIsClosed && (
+                {eventEditable && (
                   <div className="two-col">
                     <button
                       className="secondary"
@@ -1085,7 +1306,7 @@ export default function Ledger({ secret }: { secret: string }) {
             payer={member(dialog.transfer.from_id)}
             recipient={member(dialog.transfer.to_id)}
             amount={dialog.transfer.amount}
-            reupload={Boolean(dialog.payment)}
+            reupload={dialog.payment?.status === "disputed"}
             onClose={() => setDialog(null)}
             onSubmit={async (proof) => {
               await runTransferMutation(() =>
@@ -1101,7 +1322,7 @@ export default function Ledger({ secret }: { secret: string }) {
                 }),
               );
               setNotice(
-                dialog.payment
+                dialog.payment?.status === "disputed"
                   ? "已更新轉帳證明，重新開始 72 小時確認時間"
                   : "轉帳證明已送出，等待收款人確認",
               );
@@ -1122,14 +1343,18 @@ export default function Ledger({ secret }: { secret: string }) {
             title={
               dialog.action === "confirm"
                 ? "確認已收到款項？"
-                : "回報尚未收到？"
+                : dialog.action === "dispute"
+                  ? "回報尚未收到？"
+                  : "撤回付款申請？"
             }
             onClose={() => setDialog(null)}
           >
             <p>
               {dialog.action === "confirm"
                 ? `確定已收到 ${money(dialog.payment.amount)} 嗎？確認後，轉帳證明會立即刪除。`
-                : `確定尚未收到 ${money(dialog.payment.amount)} 嗎？這會暫停 72 小時自動確認。`}
+                : dialog.action === "dispute"
+                  ? `確定尚未收到 ${money(dialog.payment.amount)} 嗎？這會暫停 72 小時自動確認。`
+                  : `確定撤回 ${money(dialog.payment.amount)} 的付款申請嗎？轉帳證明會刪除，狀態將回到待付款。`}
             </p>
             <div className="two-col">
               <button
@@ -1158,7 +1383,9 @@ export default function Ledger({ secret }: { secret: string }) {
                     setNotice(
                       dialog.action === "confirm"
                         ? "已確認收到，轉帳證明已排入立即刪除"
-                        : "已回報尚未收到，自動確認已暫停",
+                        : dialog.action === "dispute"
+                          ? "已回報尚未收到，自動確認已暫停"
+                          : "付款申請已撤回，可重新提交正確證明",
                     );
                     setDialog(null);
                   } catch {
@@ -1167,6 +1394,72 @@ export default function Ledger({ secret }: { secret: string }) {
                 }}
               >
                 {busy ? "處理中…" : "確認"}
+              </button>
+            </div>
+          </Modal>
+        )}
+        {dialog?.kind === "settlement-confirm" && event && (
+          <Modal
+            title={
+              dialog.action === "start" ? "開始正式結算？" : "取消正式結算？"
+            }
+            onClose={() => setDialog(null)}
+          >
+            <p>
+              {dialog.action === "start"
+                ? "系統會保存目前所有消費、分攤與收付款關係，並鎖定帳目。開始後不能修改或刪除已納入結算的消費。"
+                : "取消後會刪除尚未付款的正式交易並返回編輯。已有付款提交時不能取消。"}
+            </p>
+            <div className="two-col">
+              <button
+                className="secondary"
+                disabled={busy}
+                onClick={() => setDialog(null)}
+              >
+                返回
+              </button>
+              <button
+                className={
+                  dialog.action === "start" ? "primary" : "danger-button"
+                }
+                disabled={busy}
+                onClick={async () => {
+                  try {
+                    await runTransferMutation(() =>
+                      dialog.action === "start"
+                        ? startSettlement(
+                            secret,
+                            revision.current,
+                            actor,
+                            event.id,
+                            transfers.map((transfer) => ({
+                              ...transfer,
+                              id: crypto.randomUUID(),
+                            })),
+                          )
+                        : cancelSettlement(
+                            secret,
+                            revision.current,
+                            actor,
+                            event.id,
+                          ),
+                    );
+                    setNotice(
+                      dialog.action === "start"
+                        ? "正式結算已建立，帳目已鎖定"
+                        : "已取消結算，可以繼續編輯帳目",
+                    );
+                    setDialog(null);
+                  } catch {
+                    // The shared error toast already explains the failure.
+                  }
+                }}
+              >
+                {busy
+                  ? "處理中…"
+                  : dialog.action === "start"
+                    ? "確認開始結算"
+                    : "確認取消結算"}
               </button>
             </div>
           </Modal>
