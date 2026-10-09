@@ -413,48 +413,58 @@ export default function Ledger({ secret }: { secret: string }) {
           (x) => x.event_id === e.id && !x.deleted_at,
         );
         return (
-          <button
-            className="event-card"
-            key={e.id}
-            onClick={() => openEvent(e.id)}
-          >
-            <div className="event-art">
-              <span>
-                <MapPin size={22} />
-              </span>
-              <span className="event-status">
-                {past ? "已結束" : "一起出發"}
-              </span>
-              <div className="event-friends">
-                {e.members.map((id) => (
-                  <span key={id} title={member(id).name}>
-                    {member(id).icon}
-                  </span>
-                ))}
-              </div>
-            </div>
-            <div className="event-body">
-              <p className="date">
-                {e.start_date.replaceAll("-", " / ")}
-                {e.end_date && e.end_date !== e.start_date
-                  ? ` — ${e.end_date.slice(5).replace("-", " / ")}`
-                  : ""}
-              </p>
-              <h3>{e.name}</h3>
-              <p className="muted">
-                {e.members.length} 位朋友 <span>·</span> {es.length} 筆消費
-              </p>
-              <div className="event-bottom">
+          <div className="event-card-shell" key={e.id}>
+            <button className="event-card" onClick={() => openEvent(e.id)}>
+              <div className="event-art">
                 <span>
-                  目前總花費
-                  <strong>{money(es.reduce((s, x) => s + x.amount, 0))}</strong>
+                  <MapPin size={22} />
                 </span>
-                <span className="round-arrow">
-                  <ArrowRight size={20} />
+                <span className="event-status">
+                  {past ? "已結束" : "一起出發"}
                 </span>
+                <div className="event-friends">
+                  {e.members.map((id) => (
+                    <span key={id} title={member(id).name}>
+                      {member(id).icon}
+                    </span>
+                  ))}
+                </div>
               </div>
-            </div>
-          </button>
+              <div className="event-body">
+                <p className="date">
+                  {e.start_date.replaceAll("-", " / ")}
+                  {e.end_date && e.end_date !== e.start_date
+                    ? ` — ${e.end_date.slice(5).replace("-", " / ")}`
+                    : ""}
+                </p>
+                <h3>{e.name}</h3>
+                <p className="muted">
+                  {e.members.length} 位朋友 <span>·</span> {es.length} 筆消費
+                </p>
+                <div className="event-bottom">
+                  <span>
+                    目前總花費
+                    <strong>
+                      {money(es.reduce((s, x) => s + x.amount, 0))}
+                    </strong>
+                  </span>
+                  <span className="round-arrow">
+                    <ArrowRight size={20} />
+                  </span>
+                </div>
+              </div>
+            </button>
+            {past && (
+              <button
+                className="past-event-delete"
+                onClick={() => openEventLifecycle(e, "delete")}
+                aria-label={`刪除活動 ${e.name}`}
+              >
+                <Trash2 size={15} />
+                刪除活動
+              </button>
+            )}
+          </div>
         );
       });
   return (

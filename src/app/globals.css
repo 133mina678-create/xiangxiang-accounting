@@ -325,7 +325,11 @@ small {
   grid-template-columns: repeat(3, 1fr);
   gap: 22px;
 }
+.event-card-shell {
+  min-width: 0;
+}
 .event-card {
+  width: 100%;
   padding: 0;
   border: 1px solid var(--line);
   border-radius: var(--radius-card);
@@ -340,10 +344,10 @@ small {
   position: relative;
   min-width: 0;
 }
-.event-card:nth-child(2) {
+.event-card-shell:nth-child(2) .event-card {
   animation-delay: 45ms;
 }
-.event-card:nth-child(3) {
+.event-card-shell:nth-child(3) .event-card {
   animation-delay: 90ms;
 }
 .event-card::after {
@@ -362,6 +366,21 @@ small {
   transform: translateY(-4px);
   box-shadow: 0 10px 30px #433b2910;
 }
+.past-event-delete {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 44px;
+  margin: 7px 4px 0 auto;
+  padding: 8px 11px;
+  border-radius: 11px;
+  color: var(--danger);
+  font-size: 0.82rem;
+}
+.past-event-delete:hover {
+  background: #f8e5df;
+}
 .event-art {
   background: var(--surface-secondary);
   height: 126px;
@@ -371,10 +390,10 @@ small {
   align-items: flex-start;
   justify-content: space-between;
 }
-.event-card:nth-child(3n + 2) .event-art {
+.event-card-shell:nth-child(3n + 2) .event-art {
   background: #e9eee4;
 }
-.event-card:nth-child(3n) .event-art {
+.event-card-shell:nth-child(3n) .event-art {
   background: #f3e3dc;
 }
 .event-art > span:first-child {
@@ -1871,7 +1890,7 @@ body:has(dialog[open]) {
       ". actions actions";
     gap: 14px;
   }
-  .event-grid:has(.event-card:only-child) {
+  .event-grid:has(> .event-card-shell:only-child) {
     grid-template-columns: repeat(2, 1fr);
   }
 }
@@ -1961,7 +1980,7 @@ body:has(dialog[open]) {
     margin: 24px 0 17px;
   }
   .event-grid,
-  .event-grid:has(.event-card:only-child) {
+  .event-grid:has(> .event-card-shell:only-child) {
     grid-template-columns: 1fr;
   }
   .event-card {
