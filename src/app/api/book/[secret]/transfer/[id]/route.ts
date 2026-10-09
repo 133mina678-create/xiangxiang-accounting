@@ -21,7 +21,7 @@ export async function POST(
     };
     if (!Number.isSafeInteger(body.revision) || !body.actor || !body.action)
       throw new Error("invalid_request");
-    if (!['confirm', 'dispute'].includes(body.action)) throw new Error("invalid_action");
+    if (!['confirm', 'dispute', 'withdraw'].includes(body.action)) throw new Error("invalid_action");
     const admin = adminClient();
     const { error } = await admin.rpc("transition_transfer", {
       p_secret: secret,
@@ -31,7 +31,7 @@ export async function POST(
       p_action: body.action,
     });
     if (error) throw new Error(error.message);
-    if (body.action === "confirm")
+    if (body.action === "confirm" || body.action === "withdraw")
       await cleanupQueuedProofs(admin).catch(() => undefined);
     return Response.json({ ok: true }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {

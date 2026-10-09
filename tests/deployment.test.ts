@@ -7,10 +7,14 @@ describe("Vercel deployment configuration", () => {
     NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "sb_publishable_example",
     SUPABASE_SECRET_KEY: "sb_secret_server_only_example",
     CRON_SECRET: "a".repeat(32),
+    ADMIN_ACTION_SECRET: "private-admin-code-2026",
   };
   it("accepts public configuration and local checks without credentials", () => {
     expect(() => validateDeploymentEnv(env)).not.toThrow();
     expect(() => validateDeploymentEnv({})).not.toThrow();
+    expect(() =>
+      validateDeploymentEnv({ ...env, ADMIN_ACTION_SECRET: undefined }),
+    ).not.toThrow();
   });
   it("rejects missing and placeholder values", () => {
     expect(() => validateDeploymentEnv({ VERCEL: "1" })).toThrow();

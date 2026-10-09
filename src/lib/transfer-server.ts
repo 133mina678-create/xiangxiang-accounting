@@ -1,6 +1,6 @@
 import "server-only";
 
-import { createHash, randomUUID } from "node:crypto";
+import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { MAX_PROOF_UPLOAD_BYTES, PROOF_TYPES } from "./transfer-state";
 
@@ -8,10 +8,15 @@ export const TRANSFER_PROOF_BUCKET = "transfer-proofs";
 
 export function adminClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SECRET_KEY ?? process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const key =
+    process.env.SUPABASE_SECRET_KEY ?? process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) throw new Error("server_not_configured");
   return createClient(url, key, {
-    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
+    },
   });
 }
 
@@ -19,21 +24,41 @@ export function validBookSecret(secret: string) {
   return /^[a-f0-9]{64}$/.test(secret);
 }
 
-export function proofObjectPath(secret: string, eventId: string, settlementId: string) {
+export function eventManagementConfigured() {
+  return (process.env.ADMIN_ACTION_SECRET?.length ?? 0) >= 20;
+}
+
+export function validAdminSecret(candidate: string) {
+  const expected = process.env.ADMIN_ACTION_SECRET;
+  if (!expected || expected.length < 20 || !candidate) return false;
+  const left = createHash("sha256").update(expected).digest();
+  const right = createHash("sha256").update(candidate).digest();
+  return timingSafeEqual(left, right);
+}
+
+export function proofObjectPath(
+  secret: string,
+  eventId: string,
+  settlementId: string,
+) {
   const workspaceScope = createHash("sha256").update(secret).digest("hex");
   return `${workspaceScope}/${eventId}/${settlementId}/${randomUUID()}.webp`;
 }
 
 export function validateCompressedProof(file: File) {
-  if (!(PROOF_TYPES as readonly string[]).includes(file.type)) return "invalid_file_type";
-  if (file.size <= 0 || file.size > MAX_PROOF_UPLOAD_BYTES) return "invalid_file_size";
+  if (!(PROOF_TYPES as readonly string[]).includes(file.type))
+    return "invalid_file_type";
+  if (file.size <= 0 || file.size > MAX_PROOF_UPLOAD_BYTES)
+    return "invalid_file_size";
   return "";
 }
 
 type CleanupRow = { id: string; object_path: string };
 
 export async function cleanupQueuedProofs(admin: SupabaseClient) {
-  const { data, error } = await admin.rpc("claim_proof_cleanup", { p_limit: 100 });
+  const { data, error } = await admin.rpc("claim_proof_cleanup", {
+    p_limit: 100,
+  });
   if (error) throw new Error("cleanup_claim_failed");
   const rows = (data ?? []) as CleanupRow[];
   if (!rows.length) return { deleted: 0, deferred: 0 };
@@ -56,7 +81,8 @@ export function apiError(error: unknown) {
   const message = error instanceof Error ? error.message : "";
   if (message.includes("conflict"))
     return { status: 409, message: "朋友剛更新了帳本，請重新確認後再試一次。" };
-  if (message.includes("invalid_link")) return { status: 404, message: "帳本連結無效。" };
+  if (message.includes("invalid_link"))
+    return { status: 404, message: "帳本連結無效。" };
   if (message.includes("只有付款人") || message.includes("只有收款人"))
     return { status: 403, message };
   if (message.includes("狀態已變更") || message.includes("轉帳建議已變動"))
@@ -65,5 +91,19 @@ export function apiError(error: unknown) {
     return { status: 404, message: "轉帳證明已刪除或目前無法查看。" };
   if (message === "server_not_configured")
     return { status: 503, message: "轉帳證明服務尚未完成設定。" };
+  if (message.includes("尚未完成的款項"))
+    return {
+      status: 409,
+      message: "此活動仍有尚未完成的款項，請先完成結算後再刪除。",
+    };
+  if (message === "admin_not_configured")
+    return {
+      status: 503,
+      message: "活動管理憑證尚未設定，刪除與還原暫未啟用。",
+    };
+  if (message.includes("invalid_admin_secret"))
+    return { status: 403, message: "活動管理密碼不正確。" };
+  if (message.includes("admin_rate_limited"))
+    return { status: 429, message: "嘗試次數過多，請 15 分鐘後再試。" };
   return { status: 400, message: "操作未完成，請稍後再試。" };
 }

@@ -17,6 +17,8 @@ import {
   MapPin,
   CalendarDays,
   RefreshCw,
+  ArchiveRestore,
+  ShieldCheck,
 } from "lucide-react";
 import {
   readBook,
@@ -25,6 +27,7 @@ import {
   transitionTransfer,
   startSettlement,
   cancelSettlement,
+  manageEvent,
 } from "@/lib/api";
 import {
   settle,
@@ -69,6 +72,8 @@ type Dialog =
       action: "confirm" | "dispute" | "withdraw";
     }
   | { kind: "settlement-confirm"; action: "start" | "cancel" }
+  | { kind: "event-lifecycle"; event: Event; action: "delete" | "restore" }
+  | { kind: "recently-deleted" }
   | { kind: "settings" }
   | null;
 export default function Ledger({ secret }: { secret: string }) {
@@ -80,7 +85,11 @@ export default function Ledger({ secret }: { secret: string }) {
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
     [notice, setNotice] = useState(""),
-    [synced, setSynced] = useState(false);
+    [synced, setSynced] = useState(false),
+    [syncedAt, setSyncedAt] = useState(0),
+    [managementEnabled, setManagementEnabled] = useState(false),
+    [adminSecret, setAdminSecret] = useState(""),
+    [deleteConfirmation, setDeleteConfirmation] = useState("");
   const [day, setDay] = useState(""),
     [payer, setPayer] = useState(""),
     [category, setCategory] = useState(""),
@@ -102,6 +111,7 @@ export default function Ledger({ secret }: { secret: string }) {
       if (next.revision >= revision.current) {
         revision.current = next.revision;
         setBook(next);
+        setSyncedAt(Date.now());
       }
       setSynced(true);
     } catch (e) {
@@ -116,6 +126,10 @@ export default function Ledger({ secret }: { secret: string }) {
     if (identity) setActor(identity);
     else setDialog({ kind: "identity" });
     void refresh();
+    void fetch(`/api/book/${secret}/event-lifecycle`)
+      .then((response) => response.json())
+      .then((result) => setManagementEnabled(result.enabled === true))
+      .catch(() => setManagementEnabled(false));
     const timer = setInterval(() => {
       if (document.visibilityState === "visible" && !working.current)
         void refresh();
@@ -128,7 +142,7 @@ export default function Ledger({ secret }: { secret: string }) {
       window.removeEventListener("focus", wake);
       window.removeEventListener("online", wake);
     };
-  }, [refresh]); // Identity is a preference only, never authorization.
+  }, [refresh, secret]); // Identity is a preference only, never authorization.
   useEffect(() => {
     if (!notice) return;
     const t = setTimeout(() => setNotice(""), 6000);
@@ -202,6 +216,43 @@ export default function Ledger({ secret }: { secret: string }) {
     setSettlementView("all");
     setSettlementPerson("");
   };
+  const openEventLifecycle = (target: Event, action: "delete" | "restore") => {
+    setAdminSecret("");
+    setDeleteConfirmation("");
+    setDialog({ kind: "event-lifecycle", event: target, action });
+  };
+  const runEventLifecycle = async (
+    target: Event,
+    action: "delete" | "restore",
+  ) => {
+    if (working.current) return;
+    working.current = true;
+    setBusy(true);
+    setError("");
+    try {
+      await manageEvent(secret, {
+        eventId: target.id,
+        action,
+        adminSecret,
+      });
+      if (action === "delete") setEventId("");
+      await refresh();
+      setNotice(
+        action === "delete"
+          ? `已將「${target.name}」移至最近刪除`
+          : `已還原「${target.name}」`,
+      );
+      setDialog(null);
+      setAdminSecret("");
+      setDeleteConfirmation("");
+    } catch (caught) {
+      setError((caught as Error).message);
+      await refresh();
+    } finally {
+      working.current = false;
+      setBusy(false);
+    }
+  };
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(window.location.href);
@@ -233,10 +284,12 @@ export default function Ledger({ secret }: { secret: string }) {
   const fixedMembers = book.members.filter(
     (candidate) => candidate.member_type !== "guest",
   );
-  const event = book.events.find((e) => e.id === eventId);
+  const event = book.events.find((e) => e.id === eventId && !e.deleted_at);
   const eventIsClosed = event?.status === "closed";
   const settlementLocked = event?.settlement_state === "locked";
-  const eventEditable = Boolean(event && !eventIsClosed && !settlementLocked);
+  const eventEditable = Boolean(
+    event && !event.deleted_at && !eventIsClosed && !settlementLocked,
+  );
   const expenses = book.expenses.filter(
     (e) => e.event_id === eventId && !e.deleted_at,
   );
@@ -351,9 +404,10 @@ export default function Ledger({ secret }: { secret: string }) {
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
+  const deletedEvents = book.deleted_events ?? [];
   const cards = (past: boolean) =>
     book.events
-      .filter((e) => (e.status === "closed") === past)
+      .filter((e) => !e.deleted_at && (e.status === "closed") === past)
       .map((e) => {
         const es = book.expenses.filter(
           (x) => x.event_id === e.id && !x.deleted_at,
@@ -461,13 +515,19 @@ export default function Ledger({ secret }: { secret: string }) {
                 <h2>
                   進行中的活動{" "}
                   <span>
-                    {book.events.filter((e) => e.status === "active").length}
+                    {
+                      book.events.filter(
+                        (e) => !e.deleted_at && e.status === "active",
+                      ).length
+                    }
                   </span>
                 </h2>
                 <span className="muted">下一段回憶，從這裡開始</span>
               </div>
               <div className="event-grid">{cards(false)}</div>
-              {!book.events.some((e) => e.status === "active") && (
+              {!book.events.some(
+                (e) => !e.deleted_at && e.status === "active",
+              ) && (
                 <div className="empty">
                   <BookOpen />
                   <h3>還沒有進行中的活動</h3>
@@ -485,9 +545,21 @@ export default function Ledger({ secret }: { secret: string }) {
                 <span className="muted">花費有記錄，回憶也在</span>
               </div>
               <div className="event-grid">{cards(true)}</div>
-              {!book.events.some((e) => e.status === "closed") && (
+              {!book.events.some(
+                (e) => !e.deleted_at && e.status === "closed",
+              ) && (
                 <p className="muted">結束的活動可以收進這裡，隨時回來看看。</p>
               )}
+              <button
+                className="recently-deleted-link"
+                onClick={() => setDialog({ kind: "recently-deleted" })}
+              >
+                <Trash2 size={15} />
+                最近刪除
+                {deletedEvents.length > 0 && (
+                  <span>{deletedEvents.length}</span>
+                )}
+              </button>
               <footer className="home-footer">
                 <span>🔥 ⭐ 💬 🦑 🥒 🐰</span>
                 <p>六個人，一本帳。每一筆都算得剛剛好。</p>
@@ -1201,7 +1273,7 @@ export default function Ledger({ secret }: { secret: string }) {
             <p className="hint">這不是登入。持有秘密連結的朋友都有編輯權限。</p>
           </Modal>
         )}
-        {dialog?.kind === "event" && (
+        {dialog?.kind === "event" && !dialog.event?.deleted_at && (
           <EventForm
             members={book.members}
             event={dialog.event}
@@ -1487,6 +1559,171 @@ export default function Ledger({ secret }: { secret: string }) {
             </div>
           </Modal>
         )}
+        {dialog?.kind === "event-lifecycle" &&
+          (() => {
+            const target = dialog.event;
+            const targetExpenses = book.expenses.filter(
+              (expense) =>
+                expense.event_id === target.id && !expense.deleted_at,
+            );
+            const targetPayments = book.payments.filter(
+              (payment) => payment.event_id === target.id,
+            );
+            const highRisk =
+              targetExpenses.length > 0 || target.settlement_state === "locked";
+            const settlementStatus = targetPayments.some((payment) =>
+              ["pending_payment", "awaiting_confirmation", "disputed"].includes(
+                payment.status,
+              ),
+            )
+              ? "仍有未完成款項"
+              : target.settlement_state === "locked"
+                ? "正式結算已完成"
+                : "尚未正式結算";
+            return (
+              <Modal
+                title={
+                  dialog.action === "delete"
+                    ? "確定要刪除這個活動嗎？"
+                    : "還原這個活動？"
+                }
+                onClose={() => setDialog(null)}
+              >
+                <div className="lifecycle-summary">
+                  <span className="lifecycle-icon">
+                    {dialog.action === "delete" ? (
+                      <Trash2 size={20} />
+                    ) : (
+                      <ArchiveRestore size={20} />
+                    )}
+                  </span>
+                  <div>
+                    <strong>{target.name}</strong>
+                    <p>
+                      {targetExpenses.length} 筆消費 · {settlementStatus}
+                    </p>
+                  </div>
+                </div>
+                <p className="lifecycle-message">
+                  {dialog.action === "delete"
+                    ? "活動將移至最近刪除，30 天內可以還原。刪除期間不會出現在一般活動列表。"
+                    : `活動會回到原本的「${target.status === "closed" ? "已結束" : "進行中"}」狀態，既有帳目與結算紀錄都不會重新計算。`}
+                </p>
+                {dialog.action === "delete" && highRisk && (
+                  <label className="admin-field">
+                    輸入活動名稱以確認
+                    <input
+                      value={deleteConfirmation}
+                      onChange={(input) =>
+                        setDeleteConfirmation(input.target.value)
+                      }
+                      autoComplete="off"
+                      placeholder={target.name}
+                    />
+                  </label>
+                )}
+                <label className="admin-field">
+                  活動管理密碼
+                  <input
+                    disabled={!managementEnabled}
+                    type="password"
+                    value={adminSecret}
+                    onChange={(input) => setAdminSecret(input.target.value)}
+                    autoComplete="off"
+                    inputMode="text"
+                  />
+                </label>
+                {!managementEnabled && (
+                  <p className="notice" role="status">
+                    活動管理憑證尚未設定，刪除與還原暫未啟用。
+                  </p>
+                )}
+                <p className="admin-security-note">
+                  <ShieldCheck size={15} />
+                  管理密碼只會送到伺服器驗證，不會保存在瀏覽器。
+                </p>
+                <div className="two-col">
+                  <button className="secondary" onClick={() => setDialog(null)}>
+                    取消
+                  </button>
+                  <button
+                    className={
+                      dialog.action === "delete" ? "danger-button" : "primary"
+                    }
+                    disabled={
+                      busy ||
+                      !managementEnabled ||
+                      !adminSecret ||
+                      (dialog.action === "delete" &&
+                        highRisk &&
+                        deleteConfirmation !== target.name)
+                    }
+                    onClick={() =>
+                      void runEventLifecycle(target, dialog.action)
+                    }
+                  >
+                    {busy
+                      ? "處理中…"
+                      : dialog.action === "delete"
+                        ? "移至最近刪除"
+                        : "還原活動"}
+                  </button>
+                </div>
+              </Modal>
+            );
+          })()}
+        {dialog?.kind === "recently-deleted" && (
+          <Modal title="最近刪除" onClose={() => setDialog(null)}>
+            <p className="muted">
+              活動至少保留 30 天。永久清理尚未啟用，到期後仍會保留資料。
+            </p>
+            <div className="deleted-event-list">
+              {deletedEvents.length ? (
+                deletedEvents.map((target) => {
+                  const remaining = target.purge_after
+                    ? Math.max(
+                        0,
+                        Math.ceil(
+                          (new Date(target.purge_after).getTime() - syncedAt) /
+                            86_400_000,
+                        ),
+                      )
+                    : 30;
+                  return (
+                    <article key={target.id} className="deleted-event-row">
+                      <div>
+                        <strong>{target.name}</strong>
+                        <span>
+                          {target.start_date.replaceAll("-", " / ")} · 原狀態：
+                          {target.status === "closed" ? "已結束" : "進行中"}
+                        </span>
+                        <small>
+                          {target.deleted_at
+                            ? `${new Date(target.deleted_at).toLocaleDateString("zh-TW")} 刪除`
+                            : ""}
+                          {` · 剩餘 ${remaining} 天`}
+                        </small>
+                      </div>
+                      <button
+                        className="secondary"
+                        onClick={() => openEventLifecycle(target, "restore")}
+                      >
+                        <ArchiveRestore size={16} />
+                        還原活動
+                      </button>
+                    </article>
+                  );
+                })
+              ) : (
+                <div className="empty compact-empty">
+                  <ArchiveRestore size={24} />
+                  <h3>最近沒有刪除的活動</h3>
+                  <p>移除的活動會在這裡保留至少 30 天。</p>
+                </div>
+              )}
+            </div>
+          </Modal>
+        )}
         {dialog?.kind === "settings" && (
           <Modal title="共同帳本設定" onClose={() => setDialog(null)}>
             <button className="secondary full" onClick={copy}>
@@ -1506,6 +1743,37 @@ export default function Ledger({ secret }: { secret: string }) {
               <RefreshCw size={16} />
               立即同步
             </button>
+            {event && (
+              <div className="event-danger-zone">
+                <div>
+                  <strong>刪除活動</strong>
+                  <span>移至最近刪除，30 天內仍可安全還原。</span>
+                </div>
+                <button
+                  className="danger-link"
+                  onClick={() => {
+                    if (
+                      payments.some((p) =>
+                        [
+                          "pending_payment",
+                          "awaiting_confirmation",
+                          "disputed",
+                        ].includes(p.status),
+                      )
+                    ) {
+                      setError(
+                        "此活動仍有尚未完成的款項，請先完成結算後再刪除。",
+                      );
+                      return;
+                    }
+                    openEventLifecycle(event, "delete");
+                  }}
+                >
+                  <Trash2 size={15} />
+                  刪除活動
+                </button>
+              </div>
+            )}
             <h3 className="subheading">最近的修改紀錄</h3>
             <div className="activity-list">
               {book.logs.length ? (
@@ -1538,7 +1806,10 @@ export default function Ledger({ secret }: { secret: string }) {
                     </small>
                   </span>
                   {book.events.find((event) => event.id === e.event_id)
-                    ?.status === "closed" ? (
+                    ?.deleted_at ? (
+                    <small className="muted">活動在最近刪除</small>
+                  ) : book.events.find((event) => event.id === e.event_id)
+                      ?.status === "closed" ? (
                     <small className="muted">活動已結束</small>
                   ) : (
                     <button

@@ -5,6 +5,7 @@ export function validateDeploymentEnv(env) {
   const key = env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
   const serverKey = env.SUPABASE_SECRET_KEY ?? env.SUPABASE_SERVICE_ROLE_KEY;
   const cronSecret = env.CRON_SECRET;
+  const adminSecret = env.ADMIN_ACTION_SECRET;
   if (!url || !key || !serverKey || !cronSecret)
     throw new Error(
       "請設定 Supabase 公開連線、SUPABASE_SECRET_KEY 與 CRON_SECRET 後重新部署。",
@@ -49,4 +50,8 @@ export function validateDeploymentEnv(env) {
     throw new Error("SUPABASE_SECRET_KEY 必須是僅供伺服器使用的 Secret key。");
   if (cronSecret.length < 32)
     throw new Error("CRON_SECRET 至少需要 32 個字元。");
+  if (adminSecret && (adminSecret.length < 20 || adminSecret === cronSecret))
+    throw new Error(
+      "ADMIN_ACTION_SECRET 至少 20 個字元，且不可與 CRON_SECRET 相同。",
+    );
 }

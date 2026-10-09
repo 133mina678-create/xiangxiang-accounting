@@ -348,19 +348,22 @@ describe("轉帳確認 migration / PostgreSQL RPC", () => {
         settlementId: nextId,
         path: nextPath,
       });
-      await isolated.db.query("delete from ledger.events where id=$1", [
-        book.events[0].id,
-      ]);
-      const deletion = await isolated.db.query<{
-        queued: boolean;
-        removed: boolean;
-      }>(
-        `select
-          exists(select 1 from ledger.proof_cleanup_queue where object_path=$1) queued,
-          not exists(select 1 from ledger.settlements where id=$2) removed`,
-        [nextPath, nextId],
-      );
-      expect(deletion.rows[0]).toEqual({ queued: true, removed: true });
+      await expect(
+        isolated.db.query("delete from ledger.events where id=$1", [
+          book.events[0].id,
+        ]),
+      ).rejects.toThrow("必須先移至最近刪除");
+      await expect(
+        isolated.db.query(
+          "select public.manage_event_lifecycle($1,$2,'delete')",
+          [isolated.secret, book.events[0].id],
+        ),
+      ).rejects.toThrow("尚未完成的款項");
+      expect(
+        (await read(isolated.db, isolated.secret)).payments.some(
+          (p) => p.id === nextId,
+        ),
+      ).toBe(true);
     } finally {
       await isolated.db.close();
     }

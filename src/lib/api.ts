@@ -153,3 +153,20 @@ export async function transferProofUrl(
   if (!body.url) throw new Error("轉帳證明目前無法查看。");
   return body.url;
 }
+
+export async function manageEvent(
+  secret: string,
+  input: {
+    eventId: string;
+    action: "delete" | "restore";
+    adminSecret: string;
+  },
+) {
+  return parseResponse(
+    await fetch(`/api/book/${secret}/event-lifecycle`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    }),
+  );
+}

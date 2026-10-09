@@ -94,7 +94,19 @@ const server = createServer(async (req, res) => {
       res.end(JSON.stringify({ message: "Successfully deleted" }));
       return;
     }
-    if (req.url === "/rest/v1/rpc/read_book") {
+    if (req.url === "/rest/v1/rpc/authorize_event_admin") {
+      const result = await db.query(
+        "select public.authorize_event_admin($1,$2) result",
+        [p.p_secret, p.p_verified],
+      );
+      res.end(JSON.stringify(result.rows[0].result));
+    } else if (req.url === "/rest/v1/rpc/manage_event_lifecycle") {
+      const result = await db.query(
+        "select public.manage_event_lifecycle($1,$2,$3) result",
+        [p.p_secret, p.p_event, p.p_action],
+      );
+      res.end(JSON.stringify(result.rows[0].result));
+    } else if (req.url === "/rest/v1/rpc/read_book") {
       const result = await db.query("select public.read_book($1) book", [
         p.p_secret,
       ]);

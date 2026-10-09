@@ -27,6 +27,7 @@ export default defineConfig({
         NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "local-test-publishable-key",
         SUPABASE_SECRET_KEY: "local-test-server-secret-key",
         CRON_SECRET: "local-test-cron-secret-at-least-32-characters",
+        ADMIN_ACTION_SECRET: "local-test-admin-secret",
       },
     },
   ],

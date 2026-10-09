@@ -181,3 +181,17 @@ pnpm build
 - [Supabase Cron](https://supabase.com/docs/guides/cron)
 
 精確安裝版本記錄於 `pnpm-lock.yaml`。
+
+## 奶油手帳與最近刪除（2026-10-09）
+
+全站色彩、圓角與柔和陰影集中於 globals.css；短淡入、卡片進場與狀態動畫遵守 prefers-reduced-motion。活動管理的刪除入口位於活動內的「帳本設定」，與結束活動分開。
+
+新增 migration 202610090002_event_soft_delete.sql，只新增欄位與受限 RPC，不重建表、不 seed、不更動原本金額。events.deleted_at 與 purge_after 保存軟刪除時間，原 status、消費、split、snapshot、payment 完整保留。read_book 的正常 events/expenses/payments 排除刪除活動，deleted_events 只提供活動摘要。資料庫觸發器阻止刪除活動的後續編輯與付款。還原只清空刪除欄位，不重算結算、不恢復 proof。
+
+刪除與還原要求秘密帳本連結及獨立管理密碼。可選的伺服器環境變數 ADMIN_ACTION_SECRET 至少 20 字元，應使用高熵隨機值；比較時用 SHA-256 與 constant-time comparison，密碼不進 client bundle、localStorage 或 log。authorize_event_admin 在 workspace row lock 下原子計數，15 分鐘內 5 次失敗就暫停 15 分鐘。manage_event_lifecycle 僅允許 service_role 呼叫，前端選擇的名字不是管理權限。
+
+**本次正式部署不新增管理憑證：若伺服器未設定 ADMIN_ACTION_SECRET，刪除與還原維持停用並清楚提示，既有記帳功能不受影響。永久清理未啟用，也沒有新增 Cron；30 天後仍保留資料，沒有匿名或公開硬刪除 API。**
+
+待付款、等待確認、有異議或 proof 清理佇列尚未完成時，刪除 RPC 拒絕操作。臨時成員 record_only 維持原來純記帳用途。
+
+部署前在私人 schema backup_20261009_pre_soft_delete 建立 10 張 ledger 表的資料快照、函式定義及 migration history，核对筆數且啟用 RLS／撤銷公開權限。這是同一資料庫內的 migration 回復快照，不是異地災難備份；不保存 Storage proof。回復優先將 Vercel 指向前一個 deployment，保留新增欄位並停用管理入口；必要時由資料庫管理者使用快照中的原 read_book 定義回復讀取介面。不得為回復而清空或重新 seed 正式帳本，亦不得直接覆蓋部署後新增的帳目。

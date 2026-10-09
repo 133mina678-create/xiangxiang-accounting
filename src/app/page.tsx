@@ -6,7 +6,7 @@ export default function Home() {
       <div className="brand-mark">香</div>
       <p className="eyebrow">一起出門，也一起算清楚</p>
       <h1>香香的記帳本</h1>
-      <p>今天又是誰先墊錢？</p>
+      <p>奶蛋香香的</p>
       <div className="paper">
         <span className="friends">🔥 ⭐ 💬 🦑 🥒 🐰</span>
         <h2>六個朋友，一本共同帳本。</h2>

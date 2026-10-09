@@ -24,6 +24,8 @@ export type Event = {
   settlement_snapshot_id: string | null;
   settlement_started_at: string | null;
   remainder_rotation_index: number;
+  deleted_at: string | null;
+  purge_after: string | null;
   members: string[];
 };
 export type Split = { member_id: string; share_amount: number; weight: number };
@@ -76,6 +78,7 @@ export type Book = {
   revision: number;
   members: Member[];
   events: Event[];
+  deleted_events?: (Event & { expense_count: number })[];
   expenses: Expense[];
   payments: Payment[];
   logs: Log[];
