@@ -22,8 +22,15 @@ test("奶油 UI 響應式與管理刪除還原", async ({ page, request }) => {
   await page.getByLabel("活動名稱").fill("安全刪除測試");
   await page.getByRole("button", { name: "建立活動", exact: true }).click();
   await page.getByRole("button", { name: /安全刪除測試/ }).click();
-  await page.getByRole("button", { name: "帳本設定", exact: true }).click();
-  await page.getByRole("button", { name: "刪除活動", exact: true }).click();
+  await page.getByRole("button", { name: "結束活動", exact: true }).click();
+  await page.getByRole("button", { name: "確認", exact: true }).click();
+  await page.getByRole("button", { name: "所有活動", exact: true }).click();
+  const deletePastEvent = page.getByRole("button", {
+    name: "刪除活動 安全刪除測試",
+    exact: true,
+  });
+  await expect(deletePastEvent).toBeVisible();
+  await deletePastEvent.click();
   await page
     .getByLabel("活動管理密碼", { exact: true })
     .fill("incorrect-password");
@@ -48,7 +55,7 @@ test("奶油 UI 響應式與管理刪除還原", async ({ page, request }) => {
   await page.getByRole("button", { name: "還原活動", exact: true }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(
-    page.getByRole("button", { name: /安全刪除測試/ }),
+    page.locator(".event-card").filter({ hasText: "安全刪除測試" }),
   ).toBeVisible();
   await page.emulateMedia({ reducedMotion: "reduce" });
   expect(
