@@ -34,6 +34,7 @@ export type Split = {
   weight: number;
   gross_amount?: number | null;
   discount_amount?: number;
+  discount_method?: "manual" | "shared";
 };
 export type Expense = {
   id: string;

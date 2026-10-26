@@ -2,7 +2,12 @@
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import type { Event, Expense, Member, Mode } from "@/lib/types";
 import { categories, money, today } from "@/lib/types";
-import { integer, splitAmount, splitDiscount } from "@/lib/calculations";
+import {
+  integer,
+  splitAmount,
+  splitDiscount,
+  splitSharedDiscount,
+} from "@/lib/calculations";
 export function Person({
   member,
   small = false,
@@ -315,16 +320,35 @@ export function ExpenseForm({
   const [expected, setExpected] = useState(getRevision);
   const [expenseUuid] = useState(() => expense?.id ?? crypto.randomUUID());
   const active = members.filter((m) => event.members.includes(m.id));
-  const [amount, setAmount] = useState(expense ? String(expense.amount) : "");
+  const hasDiscount = Boolean(
+    expense?.splits.some((split) => split.gross_amount != null),
+  );
+  const savedDiscountMethod = expense?.splits.find(
+    (split) => split.discount_method,
+  )?.discount_method;
+  const [amount, setAmount] = useState(
+    expense
+      ? String(
+          hasDiscount
+            ? expense.splits.reduce(
+                (sum, split) =>
+                  sum + (split.gross_amount ?? split.share_amount),
+                0,
+              )
+            : expense.amount,
+        )
+      : "",
+  );
   const [payer, setPayer] = useState(
     expense?.payer_id ?? (event.members.includes(actor) ? actor : active[0].id),
   );
   const [category, setCategory] = useState(expense?.category ?? "food");
-  const hasDiscount = Boolean(
-    expense?.splits.some((split) => split.gross_amount != null),
-  );
-  const [method, setMethod] = useState<Mode | "discount">(
-    hasDiscount ? "discount" : (expense?.mode ?? "equal"),
+  const [method, setMethod] = useState<Mode | "discount" | "shared-discount">(
+    hasDiscount
+      ? savedDiscountMethod === "shared"
+        ? "shared-discount"
+        : "discount"
+      : (expense?.mode ?? "equal"),
   );
   const [selected, setSelected] = useState(
     expense?.splits.map((s) => s.member_id) ?? event.members,
@@ -357,12 +381,24 @@ export function ExpenseForm({
       }),
     ),
   );
+  const [sharedDiscount, setSharedDiscount] = useState(
+    hasDiscount
+      ? String(
+          expense!.splits.reduce(
+            (sum, split) => sum + (split.discount_amount ?? 0),
+            0,
+          ),
+        )
+      : "",
+  );
   const [error, setError] = useState("");
   const ordered = active
     .filter((m) => selected.includes(m.id))
     .map((m) => m.id);
   let preview: ReturnType<typeof splitAmount> = [];
   let validation = "";
+  const isDiscountMethod =
+    method === "discount" || method === "shared-discount";
   try {
     preview =
       method === "discount"
@@ -376,25 +412,38 @@ export function ExpenseForm({
               ordered.map((id) => [id, integer(discountValues[id] ?? "")]),
             ),
           )
-        : splitAmount(
-            integer(amount, 1),
-            ordered,
-            method,
-            Object.fromEntries(
-              ordered.map((id) => [
-                id,
-                integer(
-                  values[id] ?? "",
-                  method === "weighted" ? 1 : 0,
-                ),
-              ]),
-            ),
-            active.map((member) => member.id),
-            event.remainder_rotation_index ?? 0,
-          );
+        : method === "shared-discount"
+          ? splitSharedDiscount(
+              integer(amount, 1),
+              integer(sharedDiscount, 1),
+              ordered,
+              Object.fromEntries(
+                ordered.map((id) => [id, integer(grossValues[id] ?? "")]),
+              ),
+            )
+          : splitAmount(
+              integer(amount, 1),
+              ordered,
+              method,
+              Object.fromEntries(
+                ordered.map((id) => [
+                  id,
+                  integer(values[id] ?? "", method === "weighted" ? 1 : 0),
+                ]),
+              ),
+              active.map((member) => member.id),
+              event.remainder_rotation_index ?? 0,
+            );
   } catch (e) {
     validation = (e as Error).message;
   }
+  const checkoutAmount = isDiscountMethod
+    ? preview.reduce((sum, split) => sum + split.share_amount, 0)
+    : Number(amount || 0);
+  const previewDiscount = preview.reduce(
+    (sum, split) => sum + (split.discount_amount ?? 0),
+    0,
+  );
   const defaultDate = [today(), event.start_date].sort().at(-1)!;
   return (
     <Modal title={expense ? "修改這筆消費" : "記下一筆消費"} onClose={onClose}>
@@ -413,17 +462,19 @@ export function ExpenseForm({
           const f = new FormData(e.currentTarget);
           if (
             await onSave(
-              method === "discount" ? "expense.discount.save" : "expense.save",
+              isDiscountMethod ? "expense.discount.save" : "expense.save",
               {
                 id: expenseUuid,
                 event_id: event.id,
                 name: f.get("name"),
                 date: f.get("date"),
-                amount: integer(amount, 1),
+                amount: integer(checkoutAmount, 1),
                 payer_id: payer,
                 category,
                 note: f.get("note"),
-                mode: method === "discount" ? "custom" : method,
+                mode: isDiscountMethod ? "custom" : method,
+                discount_method:
+                  method === "shared-discount" ? "shared" : "manual",
                 splits: preview,
               },
               expected,
@@ -445,12 +496,12 @@ export function ExpenseForm({
           />
         </label>
         <label className="amount-label">
-          {method === "discount" ? "折後結帳金額" : "消費金額"}{" "}
+          {isDiscountMethod ? "消費原價總額" : "消費金額"}{" "}
           <span>新台幣・整數元</span>
           <div className="amount-field">
             <span>NT$</span>
             <input
-              aria-label="消費金額"
+              aria-label={isDiscountMethod ? "消費原價總額" : "消費金額"}
               autoFocus
               inputMode="numeric"
               pattern="[0-9]+"
@@ -548,8 +599,29 @@ export function ExpenseForm({
           <select
             value={method}
             onChange={(e) => {
-              const m = e.target.value as Mode | "discount";
+              const m = e.target.value as Mode | "discount" | "shared-discount";
+              const enteringDiscount =
+                (m === "discount" || m === "shared-discount") &&
+                method !== "discount" &&
+                method !== "shared-discount";
               setMethod(m);
+              if (enteringDiscount) {
+                setGrossValues(
+                  Object.fromEntries(
+                    active.map((person) => [
+                      person.id,
+                      String(
+                        preview.find((split) => split.member_id === person.id)
+                          ?.share_amount ?? 0,
+                      ),
+                    ]),
+                  ),
+                );
+                setDiscountValues(
+                  Object.fromEntries(active.map((person) => [person.id, "0"])),
+                );
+                setSharedDiscount("");
+              }
               setValues(
                 Object.fromEntries(
                   active.map((x) => [
@@ -568,7 +640,8 @@ export function ExpenseForm({
             <option value="equal">平均分攤</option>
             <option value="custom">自訂金額</option>
             <option value="weighted">比例／份數分攤</option>
-            <option value="discount">折扣後自訂</option>
+            <option value="discount">個別折扣</option>
+            <option value="shared-discount">共同折扣（自動分配）</option>
           </select>
         </label>
         {method === "custom" && (
@@ -576,7 +649,7 @@ export function ExpenseForm({
             修改總金額後，請重新確認每人的金額；合計相符才能儲存。
           </p>
         )}
-        {method !== "equal" && method !== "discount" && (
+        {method !== "equal" && !isDiscountMethod && (
           <div className="custom-splits">
             {active
               .filter((m) => selected.includes(m.id))
@@ -600,14 +673,37 @@ export function ExpenseForm({
               ))}
           </div>
         )}
-        {method === "discount" && (
+        {isDiscountMethod && (
           <div className="discount-splits">
             <div className="discount-help">
-              <strong>分配每個人的折扣</strong>
+              <strong>
+                {method === "shared-discount"
+                  ? "共同折扣自動分配"
+                  : "分配每個人的折扣"}
+              </strong>
               <p className="hint">
-                填寫每人的原價消費與個人折扣；系統會以「原價－折扣」計算實際花銷。
+                {method === "shared-discount"
+                  ? "填寫共同折扣與每人的原價消費，系統會依原價比例分配整數折扣。"
+                  : "填寫每人的原價消費與個人折扣，系統會自動算出折後結帳金額。"}
               </p>
             </div>
+            {method === "shared-discount" && (
+              <label className="shared-discount-field">
+                共同折扣總額
+                <span className="inline-input">
+                  <input
+                    aria-label="共同折扣總額"
+                    inputMode="numeric"
+                    pattern="[0-9]+"
+                    required
+                    value={sharedDiscount}
+                    onChange={(e) => setSharedDiscount(e.target.value)}
+                    placeholder="例如：80"
+                  />
+                  元
+                </span>
+              </label>
+            )}
             {active
               .filter((m) => selected.includes(m.id))
               .map((m) => (
@@ -629,27 +725,54 @@ export function ExpenseForm({
                       }
                     />
                   </label>
-                  <label>
-                    折扣
-                    <input
-                      aria-label={`${m.name}個人折扣`}
-                      inputMode="numeric"
-                      pattern="[0-9]+"
-                      required
-                      value={discountValues[m.id] ?? ""}
-                      onChange={(e) =>
-                        setDiscountValues((values) => ({
-                          ...values,
-                          [m.id]: e.target.value,
-                        }))
-                      }
-                    />
-                  </label>
+                  {method === "discount" ? (
+                    <label>
+                      折扣
+                      <input
+                        aria-label={`${m.name}個人折扣`}
+                        inputMode="numeric"
+                        pattern="[0-9]+"
+                        required
+                        value={discountValues[m.id] ?? ""}
+                        onChange={(e) =>
+                          setDiscountValues((values) => ({
+                            ...values,
+                            [m.id]: e.target.value,
+                          }))
+                        }
+                      />
+                    </label>
+                  ) : (
+                    <span className="auto-discount">
+                      自動折扣
+                      <b>
+                        {money(
+                          preview.find((s) => s.member_id === m.id)
+                            ?.discount_amount ?? 0,
+                        )}
+                      </b>
+                    </span>
+                  )}
                   <span className="discount-result">
-                    實際 {money(preview.find((s) => s.member_id === m.id)?.share_amount ?? 0)}
+                    實際{" "}
+                    {money(
+                      preview.find((s) => s.member_id === m.id)?.share_amount ??
+                        Math.max(
+                          Number(grossValues[m.id] || 0) -
+                            Number(discountValues[m.id] || 0),
+                          0,
+                        ),
+                    )}
                   </span>
                 </div>
               ))}
+          </div>
+        )}
+        {isDiscountMethod && (
+          <div className="discount-summary" aria-live="polite">
+            <span>原價 {money(Number(amount || 0))}</span>
+            <span>－ 折扣 {money(previewDiscount)}</span>
+            <strong>＝ 結帳 {money(checkoutAmount)}</strong>
           </div>
         )}
         <div className="split-preview">
@@ -663,7 +786,7 @@ export function ExpenseForm({
                 />
                 <b>
                   {money(s.share_amount)}
-                  {method === "discount" && (s.discount_amount ?? 0) > 0 && (
+                  {isDiscountMethod && (s.discount_amount ?? 0) > 0 && (
                     <small>（折 {money(s.discount_amount ?? 0)}）</small>
                   )}
                 </b>

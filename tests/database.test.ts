@@ -1143,6 +1143,7 @@ describe("真實 migration / PostgreSQL RPC", () => {
           category: "food",
           note: "原價 780 元，店家折 80 元",
           mode: "custom",
+          discount_method: "manual",
           splits: [
             {
               member_id: payer.id,
@@ -1172,12 +1173,32 @@ describe("真實 migration / PostgreSQL RPC", () => {
       const saved = book.expenses.find((expense) => expense.id === id)!;
       expect(saved.amount).toBe(700);
       expect(saved.splits).toMatchObject([
-        { gross_amount: 300, discount_amount: 30, share_amount: 270 },
-        { gross_amount: 280, discount_amount: 20, share_amount: 260 },
-        { gross_amount: 200, discount_amount: 30, share_amount: 170 },
+        {
+          gross_amount: 300,
+          discount_amount: 30,
+          discount_method: "manual",
+          share_amount: 270,
+        },
+        {
+          gross_amount: 280,
+          discount_amount: 20,
+          discount_method: "manual",
+          share_amount: 260,
+        },
+        {
+          gross_amount: 200,
+          discount_amount: 30,
+          discount_method: "manual",
+          share_amount: 170,
+        },
       ]);
-      expect(saved.splits.reduce((sum, split) => sum + split.share_amount, 0)).toBe(700);
-      expect(book.expenses.find((expense) => expense.id === legacyExpense.id)?.splits).toEqual(legacyExpense.splits);
+      expect(
+        saved.splits.reduce((sum, split) => sum + split.share_amount, 0),
+      ).toBe(700);
+      expect(
+        book.expenses.find((expense) => expense.id === legacyExpense.id)
+          ?.splits,
+      ).toEqual(legacyExpense.splits);
       await expect(
         saveDiscountExpense(
           isolated.db,
@@ -1196,6 +1217,50 @@ describe("真實 migration / PostgreSQL RPC", () => {
           },
         ),
       ).rejects.toThrow("折後金額合計");
+
+      book = await read(isolated.db, isolated.secret);
+      const sharedId = crypto.randomUUID();
+      await saveDiscountExpense(
+        isolated.db,
+        isolated.secret,
+        book.revision,
+        payer.id,
+        {
+          id: sharedId,
+          event_id: event.id,
+          name: "共同折扣",
+          date: event.start_date,
+          amount: 700,
+          payer_id: payer.id,
+          category: "food",
+          note: "",
+          mode: "custom",
+          discount_method: "shared",
+          splits: [
+            {
+              member_id: payer.id,
+              gross_amount: 300,
+              discount_amount: 31,
+            },
+            {
+              member_id: second.id,
+              gross_amount: 280,
+              discount_amount: 29,
+            },
+            {
+              member_id: third.id,
+              gross_amount: 200,
+              discount_amount: 20,
+            },
+          ],
+        },
+      );
+      book = await read(isolated.db, isolated.secret);
+      expect(
+        book.expenses
+          .find((expense) => expense.id === sharedId)
+          ?.splits.every((split) => split.discount_method === "shared"),
+      ).toBe(true);
     } finally {
       await isolated.db.close();
     }

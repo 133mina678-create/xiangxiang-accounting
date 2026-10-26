@@ -120,6 +120,14 @@ const server = createServer(async (req, res) => {
         JSON.stringify(p.p_data),
       ]);
       res.end("null");
+    } else if (req.url === "/rest/v1/rpc/save_discount_expense") {
+      await db.query("select public.save_discount_expense($1,$2,$3,$4)", [
+        p.p_secret,
+        p.p_revision,
+        p.p_actor,
+        JSON.stringify(p.p_data),
+      ]);
+      res.end("null");
     } else if (req.url === "/rest/v1/rpc/start_settlement") {
       const result = await db.query(
         "select public.start_settlement($1,$2,$3,$4,$5) result",

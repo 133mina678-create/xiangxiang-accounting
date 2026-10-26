@@ -4,6 +4,7 @@ import {
   splitAmount,
   splitEqualRotating,
   splitDiscount,
+  splitSharedDiscount,
   personalExpenseRecords,
   statistics,
   settle,
@@ -104,7 +105,7 @@ describe("整數分攤", () => {
   });
   it("個人折扣以整數保存且不改變實際分攤", () => {
     const splits = splitDiscount(
-      700,
+      780,
       ["a", "b", "c"],
       { a: 300, b: 280, c: 200 },
       { a: 30, b: 20, c: 30 },
@@ -114,6 +115,7 @@ describe("整數分攤", () => {
         member_id: "a",
         gross_amount: 300,
         discount_amount: 30,
+        discount_method: "manual",
         share_amount: 270,
         weight: 1,
       },
@@ -121,6 +123,7 @@ describe("整數分攤", () => {
         member_id: "b",
         gross_amount: 280,
         discount_amount: 20,
+        discount_method: "manual",
         share_amount: 260,
         weight: 1,
       },
@@ -128,6 +131,7 @@ describe("整數分攤", () => {
         member_id: "c",
         gross_amount: 200,
         discount_amount: 30,
+        discount_method: "manual",
         share_amount: 170,
         weight: 1,
       },
@@ -143,15 +147,39 @@ describe("整數分攤", () => {
       spent: 260,
       paid: 0,
     });
-    expect(statistics(ids, [discounted]).find((row) => row.id === "b")?.share).toBe(260);
+    expect(
+      statistics(ids, [discounted]).find((row) => row.id === "b")?.share,
+    ).toBe(260);
   });
   it("拒絕不平衡或大於原價的個人折扣", () => {
-    expect(() =>
-      splitDiscount(700, ["a"], { a: 780 }, { a: 79 }),
-    ).toThrow("折後金額合計");
-    expect(() =>
-      splitDiscount(1, ["a"], { a: 1 }, { a: 2 }),
-    ).toThrow("折扣不可大於原價");
+    expect(() => splitDiscount(700, ["a"], { a: 780 }, { a: 79 })).toThrow(
+      "原價合計",
+    );
+    expect(() => splitDiscount(1, ["a"], { a: 1 }, { a: 2 })).toThrow(
+      "折扣不可大於原價",
+    );
+  });
+  it("共同折扣依個人原價比例自動分配，尾差固定且守恆", () => {
+    const splits = splitSharedDiscount(780, 80, ["a", "b", "c"], {
+      a: 300,
+      b: 280,
+      c: 200,
+    });
+    expect(splits.map((split) => split.discount_amount)).toEqual([31, 29, 20]);
+    expect(splits.map((split) => split.share_amount)).toEqual([269, 251, 180]);
+    expect(splits.reduce((sum, split) => sum + split.share_amount, 0)).toBe(
+      700,
+    );
+    expect(splits.every((split) => split.discount_method === "shared")).toBe(
+      true,
+    );
+    expect(
+      splitSharedDiscount(100, 1, ["a", "b", "c"], {
+        a: 34,
+        b: 33,
+        c: 33,
+      }).map((split) => split.discount_amount),
+    ).toEqual([1, 0, 0]);
   });
   it("份數與大額", () => {
     expect(

@@ -97,12 +97,12 @@ export function splitAmount(
 }
 
 export function splitDiscount(
-  amount: number,
+  grossTotal: number,
   ids: string[],
   grossValues: Record<string, number>,
   discountValues: Record<string, number>,
 ): Split[] {
-  integer(amount, 1);
+  integer(grossTotal, 1);
   if (!ids.length || new Set(ids).size !== ids.length)
     throw new Error("請選擇不重複的分攤成員");
   const result = ids.map((member_id) => {
@@ -116,13 +116,62 @@ export function splitDiscount(
       discount_amount,
       share_amount: gross_amount - discount_amount,
       weight: 1,
+      discount_method: "manual" as const,
     };
   });
-  if (result.reduce((sum, split) => sum + split.share_amount, 0) !== amount)
-    throw new Error("每人折後金額合計必須等於結帳金額");
-  if (result.every((split) => split.discount_amount === 0))
-    throw new Error("請至少輸入 1 元折扣");
+  if (result.reduce((sum, split) => sum + split.gross_amount, 0) !== grossTotal)
+    throw new Error("每人原價合計必須等於消費原價總額");
+  const discountTotal = result.reduce(
+    (sum, split) => sum + split.discount_amount,
+    0,
+  );
+  if (discountTotal === 0) throw new Error("請至少輸入 1 元折扣");
+  if (discountTotal >= grossTotal) throw new Error("折扣後金額必須大於 0 元");
   return result;
+}
+
+export function splitSharedDiscount(
+  grossTotal: number,
+  totalDiscount: number,
+  ids: string[],
+  grossValues: Record<string, number>,
+): Split[] {
+  integer(grossTotal, 1);
+  integer(totalDiscount, 1);
+  if (totalDiscount >= grossTotal) throw new Error("共同折扣必須小於原價總額");
+  if (!ids.length || new Set(ids).size !== ids.length)
+    throw new Error("請選擇不重複的分攤成員");
+  const gross = ids.map((id) => integer(grossValues[id]));
+  if (gross.reduce((sum, value) => sum + value, 0) !== grossTotal)
+    throw new Error("每人原價合計必須等於消費原價總額");
+  const denominator = BigInt(grossTotal);
+  const discounts = gross.map((value) =>
+    Number((BigInt(totalDiscount) * BigInt(value)) / denominator),
+  );
+  const order = gross
+    .map((value, index) => ({
+      index,
+      remainder: (BigInt(totalDiscount) * BigInt(value)) % denominator,
+    }))
+    .sort((a, b) =>
+      a.remainder === b.remainder
+        ? a.index - b.index
+        : a.remainder > b.remainder
+          ? -1
+          : 1,
+    );
+  const remainder =
+    totalDiscount - discounts.reduce((sum, value) => sum + value, 0);
+  for (let index = 0; index < remainder; index++)
+    discounts[order[index].index]++;
+  return ids.map((member_id, index) => ({
+    member_id,
+    gross_amount: gross[index],
+    discount_amount: discounts[index],
+    share_amount: gross[index] - discounts[index],
+    weight: 1,
+    discount_method: "shared" as const,
+  }));
 }
 
 export function personalExpenseRecords(expenses: Expense[], memberId: string) {

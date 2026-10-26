@@ -956,19 +956,27 @@ export default function Ledger({ secret }: { secret: string }) {
                           <Person member={member(selectedSpendingPerson)} />
                           <div>
                             <span>折扣前</span>
-                            <strong>{money(personalSpendingTotals.gross)}</strong>
+                            <strong>
+                              {money(personalSpendingTotals.gross)}
+                            </strong>
                           </div>
                           <div>
                             <span>實際花銷</span>
-                            <strong>{money(personalSpendingTotals.spent)}</strong>
+                            <strong>
+                              {money(personalSpendingTotals.spent)}
+                            </strong>
                           </div>
                           <div>
                             <span>獲得折扣</span>
-                            <strong>{money(personalSpendingTotals.discount)}</strong>
+                            <strong>
+                              {money(personalSpendingTotals.discount)}
+                            </strong>
                           </div>
                           <div>
                             <span>先付款</span>
-                            <strong>{money(personalSpendingTotals.paid)}</strong>
+                            <strong>
+                              {money(personalSpendingTotals.paid)}
+                            </strong>
                           </div>
                         </div>
                         <p className="hint">
@@ -995,14 +1003,16 @@ export default function Ledger({ secret }: { secret: string }) {
                                   <span className="personal-expense-main">
                                     <strong>{item.name}</strong>
                                     <small>
-                                      {item.date} · {itemCategory[2]} · {member(item.payer_id).name}先付款
+                                      {item.date} · {itemCategory[2]} ·{" "}
+                                      {member(item.payer_id).name}先付款
                                     </small>
                                   </span>
                                   <span className="personal-expense-money">
                                     <strong>{money(spent)}</strong>
                                     {discount > 0 && (
                                       <small>
-                                        原價 {money(gross)} · 折 {money(discount)}
+                                        原價 {money(gross)} · 折{" "}
+                                        {money(discount)}
                                       </small>
                                     )}
                                   </span>
@@ -1437,7 +1447,11 @@ export default function Ledger({ secret }: { secret: string }) {
                 <p className="muted">
                   {x.date} · {c[2]} ·{" "}
                   {x.splits.some((split) => split.gross_amount != null)
-                    ? "折扣後自訂"
+                    ? x.splits.some(
+                        (split) => split.discount_method === "shared",
+                      )
+                      ? "共同折扣"
+                      : "個別折扣"
                     : {
                         equal: "平均分攤",
                         custom: "自訂金額",
@@ -1457,8 +1471,8 @@ export default function Ledger({ secret }: { secret: string }) {
                         {money(s.share_amount)}
                         {(s.discount_amount ?? 0) > 0 && (
                           <small className="split-discount-detail">
-                            原價 {money(s.gross_amount ?? s.share_amount)} · 折扣{" "}
-                            {money(s.discount_amount ?? 0)}
+                            原價 {money(s.gross_amount ?? s.share_amount)} ·
+                            折扣 {money(s.discount_amount ?? 0)}
                           </small>
                         )}
                         {x.mode === "weighted" ? ` · ${s.weight} 份` : ""}

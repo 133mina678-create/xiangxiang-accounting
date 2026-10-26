@@ -53,11 +53,12 @@ export async function mutate(
           p_data: payload,
         });
   if (error) {
-    if (error.message.includes("conflict"))
+    const message = error.message || "操作未完成，請稍後再試。";
+    if (message.includes("conflict"))
       throw new Error(
         "朋友剛更新了帳本，已重新同步。你的輸入仍保留，請確認後再次儲存。",
       );
-    throw new Error(error.message);
+    throw new Error(message);
   }
 }
 

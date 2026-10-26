@@ -1789,9 +1789,26 @@ legend {
 .discount-help .hint {
   margin: 4px 0 8px;
 }
+.shared-discount-field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 13px;
+  border: 1px dashed var(--primary);
+  border-radius: 13px;
+  background: var(--accent-soft);
+}
+.shared-discount-field input {
+  width: 120px;
+  text-align: right;
+}
 .discount-row {
   display: grid;
-  grid-template-columns: minmax(130px, 1fr) minmax(86px, 110px) minmax(86px, 110px) minmax(105px, auto);
+  grid-template-columns: minmax(130px, 1fr) minmax(86px, 110px) minmax(
+      86px,
+      110px
+    ) minmax(105px, auto);
   align-items: end;
   gap: 10px;
   padding: 13px;
@@ -1816,6 +1833,34 @@ legend {
   font-size: 0.8rem;
   font-weight: 700;
   white-space: nowrap;
+}
+.auto-discount {
+  align-self: center;
+  color: var(--muted);
+  font-size: 0.7rem;
+  text-align: right;
+}
+.auto-discount b {
+  display: block;
+  color: var(--ink);
+  font-size: 0.82rem;
+}
+.discount-summary {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  margin: 14px 0;
+  padding: 13px 16px;
+  border-radius: 13px;
+  background: #eeefdf;
+  font-size: 0.84rem;
+  font-variant-numeric: tabular-nums;
+}
+.discount-summary strong {
+  color: var(--green);
+  font-size: 1rem;
 }
 .inline-input {
   display: flex;
@@ -2408,8 +2453,19 @@ body:has(dialog[open]) {
     padding: 22px 20px max(25px, env(safe-area-inset-bottom));
   }
   .discount-row {
-    grid-template-columns: minmax(0, 1fr) minmax(72px, 0.8fr) minmax(72px, 0.8fr);
+    grid-template-columns: minmax(0, 1fr) minmax(72px, 0.8fr) minmax(
+        72px,
+        0.8fr
+      );
     align-items: end;
+  }
+  .shared-discount-field {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .shared-discount-field .inline-input,
+  .shared-discount-field input {
+    width: 100%;
   }
   .discount-row > .person {
     grid-column: 1 / -1;
