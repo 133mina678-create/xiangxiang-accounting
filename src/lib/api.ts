@@ -37,13 +37,21 @@ export async function mutate(
   payload: unknown,
 ): Promise<void> {
   if (!client) throw new Error("尚未連接雲端帳本");
-  const { error } = await client.rpc("change_book", {
-    p_secret: secret,
-    p_revision: revision,
-    p_actor: actor,
-    p_action: action,
-    p_data: payload,
-  });
+  const { error } =
+    action === "expense.discount.save"
+      ? await client.rpc("save_discount_expense", {
+          p_secret: secret,
+          p_revision: revision,
+          p_actor: actor,
+          p_data: payload,
+        })
+      : await client.rpc("change_book", {
+          p_secret: secret,
+          p_revision: revision,
+          p_actor: actor,
+          p_action: action,
+          p_data: payload,
+        });
   if (error) {
     if (error.message.includes("conflict"))
       throw new Error(

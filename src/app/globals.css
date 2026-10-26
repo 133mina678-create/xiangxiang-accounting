@@ -25,6 +25,11 @@
 * {
   box-sizing: border-box;
 }
+html,
+body {
+  max-width: 100%;
+  overflow-x: clip;
+}
 body {
   margin: 0;
   background: var(--bg);
@@ -52,6 +57,7 @@ input,
 select,
 textarea {
   font: inherit;
+  max-width: 100%;
 }
 button,
 a,
@@ -885,6 +891,83 @@ select {
   gap: 18px;
   margin-top: 24px;
 }
+.personal-spending {
+  margin-top: 34px;
+  min-width: 0;
+}
+.personal-spending-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 18px;
+}
+.personal-spending-summary {
+  display: grid;
+  grid-template-columns: minmax(150px, 1fr) repeat(4, minmax(105px, auto));
+  align-items: center;
+  gap: 16px 28px;
+  padding: 20px 22px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--paper);
+}
+.personal-spending-summary > div {
+  min-width: 0;
+}
+.personal-spending-summary span,
+.personal-expense-row small {
+  display: block;
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+.personal-spending-summary strong {
+  display: block;
+  font-size: 1.05rem;
+  font-variant-numeric: tabular-nums;
+}
+.personal-expense-list {
+  display: grid;
+  gap: 10px;
+}
+.personal-expense-row {
+  width: 100%;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) minmax(130px, auto);
+  align-items: center;
+  gap: 12px;
+  padding: 15px 17px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--paper);
+  text-align: left;
+}
+.personal-expense-row:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.personal-expense-icon {
+  font-size: 1.35rem;
+}
+.personal-expense-main,
+.personal-expense-money {
+  min-width: 0;
+}
+.personal-expense-main strong {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.personal-expense-money {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.personal-expense-money small {
+  white-space: normal;
+}
+.compact-empty {
+  padding-block: 28px;
+}
 .stat-card {
   padding: 22px;
   background: var(--paper);
@@ -1698,6 +1781,42 @@ legend {
   margin: 12px 0;
   gap: 15px;
 }
+.discount-splits {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+}
+.discount-help .hint {
+  margin: 4px 0 8px;
+}
+.discount-row {
+  display: grid;
+  grid-template-columns: minmax(130px, 1fr) minmax(86px, 110px) minmax(86px, 110px) minmax(105px, auto);
+  align-items: end;
+  gap: 10px;
+  padding: 13px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: var(--surface-secondary);
+}
+.discount-row > label {
+  min-width: 0;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+.discount-row input {
+  width: 100%;
+  min-width: 0;
+  padding: 8px 9px;
+  text-align: right;
+}
+.discount-result {
+  align-self: center;
+  text-align: right;
+  font-size: 0.8rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
 .inline-input {
   display: flex;
   align-items: center;
@@ -1727,6 +1846,15 @@ legend {
 }
 .split-preview b {
   font-weight: 500;
+  text-align: right;
+}
+.split-preview b small,
+.split-discount-detail {
+  display: block;
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 400;
+  overflow-wrap: anywhere;
 }
 .split-preview .hint {
   margin-bottom: 0;
@@ -2124,6 +2252,40 @@ body:has(dialog[open]) {
     grid-template-columns: 1fr 1fr;
     gap: 10px;
   }
+  .personal-spending-head {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .personal-spending-head .compact-label,
+  .personal-spending-head .compact-label select {
+    width: 100%;
+    max-width: none;
+  }
+  .personal-spending-summary {
+    grid-template-columns: 1fr 1fr;
+    gap: 13px;
+    padding: 16px;
+  }
+  .personal-spending-summary > .person {
+    grid-column: 1 / -1;
+  }
+  .personal-expense-row {
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-areas:
+      "icon main"
+      ". money";
+    padding: 14px;
+  }
+  .personal-expense-icon {
+    grid-area: icon;
+  }
+  .personal-expense-main {
+    grid-area: main;
+  }
+  .personal-expense-money {
+    grid-area: money;
+    text-align: left;
+  }
   .stat-card {
     padding: 15px 12px;
   }
@@ -2245,6 +2407,16 @@ body:has(dialog[open]) {
     margin: auto 0 0;
     padding: 22px 20px max(25px, env(safe-area-inset-bottom));
   }
+  .discount-row {
+    grid-template-columns: minmax(0, 1fr) minmax(72px, 0.8fr) minmax(72px, 0.8fr);
+    align-items: end;
+  }
+  .discount-row > .person {
+    grid-column: 1 / -1;
+  }
+  .discount-result {
+    white-space: normal;
+  }
   .modal-head {
     margin-bottom: 18px;
   }
@@ -2297,6 +2469,20 @@ body:has(dialog[open]) {
   }
   .stats-grid {
     grid-template-columns: 1fr;
+  }
+  .personal-spending-summary {
+    grid-template-columns: 1fr;
+  }
+  .personal-spending-summary > .person {
+    grid-column: auto;
+  }
+  .discount-row {
+    grid-template-columns: 1fr 1fr;
+  }
+  .discount-row > .person,
+  .discount-result {
+    grid-column: 1 / -1;
+    text-align: left;
   }
   .transfer-times {
     grid-template-columns: 1fr;

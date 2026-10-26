@@ -3,6 +3,8 @@ import {
   integer,
   splitAmount,
   splitEqualRotating,
+  splitDiscount,
+  personalExpenseRecords,
   statistics,
   settle,
   transfersForMember,
@@ -99,6 +101,57 @@ describe("整數分攤", () => {
     expect(() =>
       splitAmount(100, ["a", "b"], "custom", { a: 20, b: 70 }),
     ).toThrow();
+  });
+  it("個人折扣以整數保存且不改變實際分攤", () => {
+    const splits = splitDiscount(
+      700,
+      ["a", "b", "c"],
+      { a: 300, b: 280, c: 200 },
+      { a: 30, b: 20, c: 30 },
+    );
+    expect(splits).toEqual([
+      {
+        member_id: "a",
+        gross_amount: 300,
+        discount_amount: 30,
+        share_amount: 270,
+        weight: 1,
+      },
+      {
+        member_id: "b",
+        gross_amount: 280,
+        discount_amount: 20,
+        share_amount: 260,
+        weight: 1,
+      },
+      {
+        member_id: "c",
+        gross_amount: 200,
+        discount_amount: 30,
+        share_amount: 170,
+        weight: 1,
+      },
+    ]);
+    const discounted = {
+      ...expense(700, "a", ["a", "b", "c"]),
+      mode: "custom" as const,
+      splits,
+    };
+    expect(personalExpenseRecords([discounted], "b")[0]).toMatchObject({
+      gross: 280,
+      discount: 20,
+      spent: 260,
+      paid: 0,
+    });
+    expect(statistics(ids, [discounted]).find((row) => row.id === "b")?.share).toBe(260);
+  });
+  it("拒絕不平衡或大於原價的個人折扣", () => {
+    expect(() =>
+      splitDiscount(700, ["a"], { a: 780 }, { a: 79 }),
+    ).toThrow("折後金額合計");
+    expect(() =>
+      splitDiscount(1, ["a"], { a: 1 }, { a: 2 }),
+    ).toThrow("折扣不可大於原價");
   });
   it("份數與大額", () => {
     expect(

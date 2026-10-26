@@ -32,6 +32,7 @@ import {
 import {
   settle,
   statistics,
+  personalExpenseRecords,
   transfersForMember,
   transferTotalsForMember,
 } from "@/lib/calculations";
@@ -95,6 +96,7 @@ export default function Ledger({ secret }: { secret: string }) {
     [category, setCategory] = useState(""),
     [grouped, setGrouped] = useState(true),
     [statsDay, setStatsDay] = useState(""),
+    [spendingPerson, setSpendingPerson] = useState(""),
     [settlementView, setSettlementView] = useState<"all" | "mine">("all"),
     [settlementPerson, setSettlementPerson] = useState("");
   const [undo, setUndo] = useState<{ id: string; event_id: string } | null>(
@@ -213,6 +215,7 @@ export default function Ledger({ secret }: { secret: string }) {
     setPayer("");
     setCategory("");
     setStatsDay("");
+    setSpendingPerson("");
     setSettlementView("all");
     setSettlementPerson("");
   };
@@ -320,6 +323,24 @@ export default function Ledger({ secret }: { secret: string }) {
         expenses.filter((e) => !statsDay || e.date === statsDay),
       )
     : [];
+  const selectedSpendingPerson =
+    event?.members.find((id) => id === spendingPerson) ??
+    event?.members.find((id) => id === actor) ??
+    event?.members[0] ??
+    "";
+  const personalSpending = personalExpenseRecords(
+    expenses.filter((expense) => !statsDay || expense.date === statsDay),
+    selectedSpendingPerson,
+  );
+  const personalSpendingTotals = personalSpending.reduce(
+    (totals, row) => ({
+      gross: totals.gross + row.gross,
+      discount: totals.discount + row.discount,
+      spent: totals.spent + row.spent,
+      paid: totals.paid + row.paid,
+    }),
+    { gross: 0, discount: 0, spent: 0, paid: 0 },
+  );
   const balances = event ? statistics(event.members, expenses, payments) : [];
   const transfers = settlementLocked ? [] : settle(balances);
   const guestTransfers = transfers.filter(
@@ -908,6 +929,97 @@ export default function Ledger({ secret }: { secret: string }) {
                       </article>
                     ))}
                   </div>
+                  <section className="personal-spending">
+                    <div className="personal-spending-head">
+                      <div>
+                        <p className="eyebrow">自己的每一筆，都看得懂</p>
+                        <h2>個人消費明細</h2>
+                      </div>
+                      <label className="compact-label">
+                        查看成員
+                        <select
+                          aria-label="查看個人消費的成員"
+                          value={selectedSpendingPerson}
+                          onChange={(e) => setSpendingPerson(e.target.value)}
+                        >
+                          {event.members.map((id) => (
+                            <option key={id} value={id}>
+                              {member(id).icon} {member(id).name}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
+                    {selectedSpendingPerson && (
+                      <>
+                        <div className="personal-spending-summary">
+                          <Person member={member(selectedSpendingPerson)} />
+                          <div>
+                            <span>折扣前</span>
+                            <strong>{money(personalSpendingTotals.gross)}</strong>
+                          </div>
+                          <div>
+                            <span>實際花銷</span>
+                            <strong>{money(personalSpendingTotals.spent)}</strong>
+                          </div>
+                          <div>
+                            <span>獲得折扣</span>
+                            <strong>{money(personalSpendingTotals.discount)}</strong>
+                          </div>
+                          <div>
+                            <span>先付款</span>
+                            <strong>{money(personalSpendingTotals.paid)}</strong>
+                          </div>
+                        </div>
+                        <p className="hint">
+                          實際花銷是自己分到的折後費用；先付款是替大家墊付的金額，兩者分開計算。
+                        </p>
+                        <div className="personal-expense-list">
+                          {personalSpending.map(
+                            ({ expense: item, gross, discount, spent }) => {
+                              const itemCategory = categories.find(
+                                (candidate) => candidate[0] === item.category,
+                              )!;
+                              return (
+                                <button
+                                  type="button"
+                                  className="personal-expense-row"
+                                  key={item.id}
+                                  onClick={() =>
+                                    setDialog({ kind: "detail", id: item.id })
+                                  }
+                                >
+                                  <span className="personal-expense-icon">
+                                    {itemCategory[1]}
+                                  </span>
+                                  <span className="personal-expense-main">
+                                    <strong>{item.name}</strong>
+                                    <small>
+                                      {item.date} · {itemCategory[2]} · {member(item.payer_id).name}先付款
+                                    </small>
+                                  </span>
+                                  <span className="personal-expense-money">
+                                    <strong>{money(spent)}</strong>
+                                    {discount > 0 && (
+                                      <small>
+                                        原價 {money(gross)} · 折 {money(discount)}
+                                      </small>
+                                    )}
+                                  </span>
+                                </button>
+                              );
+                            },
+                          )}
+                          {!personalSpending.length && (
+                            <div className="empty compact-empty">
+                              <BookOpen />
+                              <p>這個範圍內沒有個人消費紀錄。</p>
+                            </div>
+                          )}
+                        </div>
+                      </>
+                    )}
+                  </section>
                 </section>
               )}
               {tab === "settle" && (
@@ -1324,13 +1436,13 @@ export default function Ledger({ secret }: { secret: string }) {
                 <p className="detail-amount">{money(x.amount)}</p>
                 <p className="muted">
                   {x.date} · {c[2]} ·{" "}
-                  {
-                    {
-                      equal: "平均分攤",
-                      custom: "自訂金額",
-                      weighted: "份數分攤",
-                    }[x.mode]
-                  }
+                  {x.splits.some((split) => split.gross_amount != null)
+                    ? "折扣後自訂"
+                    : {
+                        equal: "平均分攤",
+                        custom: "自訂金額",
+                        weighted: "份數分攤",
+                      }[x.mode]}
                 </p>
                 <p className="detail-payer">
                   付款：
@@ -1343,6 +1455,12 @@ export default function Ledger({ secret }: { secret: string }) {
                       <Person small member={member(s.member_id)} />
                       <b>
                         {money(s.share_amount)}
+                        {(s.discount_amount ?? 0) > 0 && (
+                          <small className="split-discount-detail">
+                            原價 {money(s.gross_amount ?? s.share_amount)} · 折扣{" "}
+                            {money(s.discount_amount ?? 0)}
+                          </small>
+                        )}
                         {x.mode === "weighted" ? ` · ${s.weight} 份` : ""}
                       </b>
                     </div>

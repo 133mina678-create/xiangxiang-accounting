@@ -53,6 +53,20 @@ export async function change(
     JSON.stringify(data),
   ]);
 }
+export async function saveDiscountExpense(
+  db: PGlite,
+  secret: string,
+  revision: number,
+  actor: string,
+  data: unknown,
+) {
+  await db.query("select public.save_discount_expense($1,$2,$3,$4)", [
+    secret,
+    revision,
+    actor,
+    JSON.stringify(data),
+  ]);
+}
 export async function submitProof(
   db: PGlite,
   input: {

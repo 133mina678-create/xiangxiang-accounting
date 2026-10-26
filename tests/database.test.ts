@@ -11,6 +11,7 @@ import {
   transition,
   startSettlement,
   cancelSettlement,
+  saveDiscountExpense,
 } from "./database";
 import { settle, statistics } from "../src/lib/calculations";
 let db: PGlite, secret: string;
@@ -1118,11 +1119,92 @@ describe("真實 migration / PostgreSQL RPC", () => {
       await isolated.db.close();
     }
   });
+  it("折扣明細原子保存，既有帳目不回填且個人花銷維持守恆", async () => {
+    const isolated = await database();
+    try {
+      let book = await read(isolated.db, isolated.secret);
+      const event = book.events[0];
+      const [payer, second, third] = book.members;
+      const legacyExpense = book.expenses[0];
+      expect(legacyExpense.splits[0]).not.toHaveProperty("gross_amount");
+      const id = crypto.randomUUID();
+      await saveDiscountExpense(
+        isolated.db,
+        isolated.secret,
+        book.revision,
+        payer.id,
+        {
+          id,
+          event_id: event.id,
+          name: "常客折扣晚餐",
+          date: event.start_date,
+          amount: 700,
+          payer_id: payer.id,
+          category: "food",
+          note: "原價 780 元，店家折 80 元",
+          mode: "custom",
+          splits: [
+            {
+              member_id: payer.id,
+              gross_amount: 300,
+              discount_amount: 30,
+              share_amount: 270,
+              weight: 1,
+            },
+            {
+              member_id: second.id,
+              gross_amount: 280,
+              discount_amount: 20,
+              share_amount: 260,
+              weight: 1,
+            },
+            {
+              member_id: third.id,
+              gross_amount: 200,
+              discount_amount: 30,
+              share_amount: 170,
+              weight: 1,
+            },
+          ],
+        },
+      );
+      book = await read(isolated.db, isolated.secret);
+      const saved = book.expenses.find((expense) => expense.id === id)!;
+      expect(saved.amount).toBe(700);
+      expect(saved.splits).toMatchObject([
+        { gross_amount: 300, discount_amount: 30, share_amount: 270 },
+        { gross_amount: 280, discount_amount: 20, share_amount: 260 },
+        { gross_amount: 200, discount_amount: 30, share_amount: 170 },
+      ]);
+      expect(saved.splits.reduce((sum, split) => sum + split.share_amount, 0)).toBe(700);
+      expect(book.expenses.find((expense) => expense.id === legacyExpense.id)?.splits).toEqual(legacyExpense.splits);
+      await expect(
+        saveDiscountExpense(
+          isolated.db,
+          isolated.secret,
+          book.revision,
+          payer.id,
+          {
+            ...saved,
+            splits: [
+              {
+                member_id: payer.id,
+                gross_amount: 100,
+                discount_amount: 20,
+              },
+            ],
+          },
+        ),
+      ).rejects.toThrow("折後金額合計");
+    } finally {
+      await isolated.db.close();
+    }
+  });
   it("deployment SQL verifies RLS, grants and private publications", async () => {
     const checks = await db.query<{ check_name: string; passed: boolean }>(
       await readFile("supabase/verify.sql", "utf8"),
     );
-    expect(checks.rows).toHaveLength(13);
+    expect(checks.rows).toHaveLength(14);
     for (const check of checks.rows)
       expect(check.passed, check.check_name).toBe(true);
   });

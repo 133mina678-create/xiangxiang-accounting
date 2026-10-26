@@ -95,6 +95,54 @@ export function splitAmount(
   for (let i = 0; i < remainder; i++) result[rank[i].i].share_amount++;
   return result;
 }
+
+export function splitDiscount(
+  amount: number,
+  ids: string[],
+  grossValues: Record<string, number>,
+  discountValues: Record<string, number>,
+): Split[] {
+  integer(amount, 1);
+  if (!ids.length || new Set(ids).size !== ids.length)
+    throw new Error("請選擇不重複的分攤成員");
+  const result = ids.map((member_id) => {
+    const gross_amount = integer(grossValues[member_id]);
+    const discount_amount = integer(discountValues[member_id]);
+    if (discount_amount > gross_amount)
+      throw new Error("個人折扣不可大於原價消費");
+    return {
+      member_id,
+      gross_amount,
+      discount_amount,
+      share_amount: gross_amount - discount_amount,
+      weight: 1,
+    };
+  });
+  if (result.reduce((sum, split) => sum + split.share_amount, 0) !== amount)
+    throw new Error("每人折後金額合計必須等於結帳金額");
+  if (result.every((split) => split.discount_amount === 0))
+    throw new Error("請至少輸入 1 元折扣");
+  return result;
+}
+
+export function personalExpenseRecords(expenses: Expense[], memberId: string) {
+  return expenses
+    .filter((expense) => !expense.deleted_at)
+    .flatMap((expense) => {
+      const split = expense.splits.find((row) => row.member_id === memberId);
+      if (!split) return [];
+      const discount = split.discount_amount ?? 0;
+      return [
+        {
+          expense,
+          gross: split.gross_amount ?? split.share_amount,
+          discount,
+          spent: split.share_amount,
+          paid: expense.payer_id === memberId ? expense.amount : 0,
+        },
+      ];
+    });
+}
 export function statistics(
   ids: string[],
   expenses: Expense[],

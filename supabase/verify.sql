@@ -1,7 +1,7 @@
 -- Read-only checks. Run in SQL Editor; every passed column should be true.
 -- Does not display workspace identifiers, book secrets or user data.
-select '10 internal tables exist with RLS' as check_name,
- (select count(*)=10 and bool_and(c.relrowsecurity)
+select '11 internal tables exist with RLS' as check_name,
+ (select count(*)=11 and bool_and(c.relrowsecurity)
   from pg_class c join pg_namespace n on n.oid=c.relnamespace
   where n.nspname='ledger' and c.relkind='r') as passed
 union all
@@ -16,6 +16,13 @@ select 'anon can call secret-protected read RPC',
 union all
 select 'anon can call secret-protected write RPC',
  coalesce(has_function_privilege('anon',to_regprocedure('public.change_book(text,integer,uuid,text,jsonb)'),'EXECUTE'),false)
+union all
+select 'anon can call validated discount expense RPC',
+ (select p.prosecdef
+   and p.proconfig @> array['search_path=""']
+   and has_function_privilege('anon',p.oid,'EXECUTE')
+  from pg_proc p
+  where p.oid=to_regprocedure('public.save_discount_expense(text,integer,uuid,jsonb)'))
 union all
 select 'both RPCs have fixed search_path and definer security',
  (select count(*)=2 and bool_and(p.prosecdef and p.proconfig @> array['search_path=""'])

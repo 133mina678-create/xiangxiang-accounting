@@ -28,7 +28,13 @@ export type Event = {
   purge_after: string | null;
   members: string[];
 };
-export type Split = { member_id: string; share_amount: number; weight: number };
+export type Split = {
+  member_id: string;
+  share_amount: number;
+  weight: number;
+  gross_amount?: number | null;
+  discount_amount?: number;
+};
 export type Expense = {
   id: string;
   event_id: string;
