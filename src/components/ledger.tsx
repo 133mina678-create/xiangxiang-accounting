@@ -424,9 +424,20 @@ export default function Ledger({ secret }: { secret: string }) {
   const mainPayments = payments.filter(
     (payment) => payment.source_kind !== "supplemental",
   );
+  const supplementalPayments = payments.filter(
+    (payment) => payment.source_kind === "supplemental",
+  );
   const pendingPayments = payments.filter((p) =>
     ["pending_payment", "record_only"].includes(p.status),
   );
+  // Supplemental bills are independent from the main settlement snapshot. Their
+  // transfers must remain payable even while the main activity is still a live
+  // preview; otherwise a settled supplemental bill would have no payment entry.
+  const displayedPendingPayments = settlementLocked
+    ? pendingPayments
+    : supplementalPayments.filter((payment) =>
+        ["pending_payment", "record_only"].includes(payment.status),
+      );
   const activePayments = payments.filter((p) =>
     ["awaiting_confirmation", "disputed"].includes(p.status),
   );
@@ -516,7 +527,12 @@ export default function Ledger({ secret }: { secret: string }) {
       : transfersForMember(rows, selectedSettlementPerson);
   const settlementRows: Transfer[] = settlementLocked
     ? payments.filter((payment) => payment.status !== "superseded")
-    : transfers;
+    : [
+        ...transfers,
+        ...supplementalPayments.filter(
+          (payment) => payment.status !== "superseded",
+        ),
+      ];
   const personalTotals = transferTotalsForMember(
     settlementRows,
     selectedSettlementPerson,
@@ -1423,24 +1439,33 @@ export default function Ledger({ secret }: { secret: string }) {
                       <span>
                         待付款{" "}
                         {settlementLocked
-                          ? pendingPayments.filter(
+                          ? displayedPendingPayments.filter(
                               (p) => p.status === "pending_payment",
                             ).length
-                          : fixedTransfers.length}{" "}
+                          : fixedTransfers.length +
+                            displayedPendingPayments.filter(
+                              (p) => p.status === "pending_payment",
+                            ).length}{" "}
                         筆
                       </span>
                       {(settlementLocked
                         ? pendingPayments.some(
                             (p) => p.status === "record_only",
                           )
-                        : guestTransfers.length > 0) && (
+                        : guestTransfers.length > 0 ||
+                          displayedPendingPayments.some(
+                            (p) => p.status === "record_only",
+                          )) && (
                         <span>
                           臨時成員記帳{" "}
                           {settlementLocked
                             ? pendingPayments.filter(
                                 (p) => p.status === "record_only",
                               ).length
-                            : guestTransfers.length}{" "}
+                            : guestTransfers.length +
+                              displayedPendingPayments.filter(
+                                (p) => p.status === "record_only",
+                              ).length}{" "}
                           筆
                         </span>
                       )}
@@ -1517,14 +1542,14 @@ export default function Ledger({ secret }: { secret: string }) {
                       ))}
                     </>
                   )}
-                  {settlementLocked &&
-                    visibleForPerson(pendingPayments).length > 0 && (
-                      <>
-                        <h3 className="subheading">待付款與記帳資料</h3>
-                        <div className="settle-intro">
-                          固定成員間的款項可使用轉帳確認流程；臨時成員款項只列明金額，請自行確認。
-                        </div>
-                        {visibleForPerson(pendingPayments).map((payment, i) => {
+                  {visibleForPerson(displayedPendingPayments).length > 0 && (
+                    <>
+                      <h3 className="subheading">待付款與記帳資料</h3>
+                      <div className="settle-intro">
+                        固定成員間的款項可使用轉帳確認流程；臨時成員款項只列明金額，請自行確認。
+                      </div>
+                      {visibleForPerson(displayedPendingPayments).map(
+                        (payment, i) => {
                           const recipient = transferRecipient(
                             payment,
                             book.members,
@@ -1553,9 +1578,10 @@ export default function Ledger({ secret }: { secret: string }) {
                               }
                             />
                           );
-                        })}
-                      </>
-                    )}
+                        },
+                      )}
+                    </>
+                  )}
                   {!settlementLocked &&
                     visibleForPerson(transfers).length > 0 && (
                       <>
