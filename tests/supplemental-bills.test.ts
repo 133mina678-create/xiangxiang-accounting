@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import type { PGlite } from "@electric-sql/pglite";
 import {
+  change,
   database,
   read,
   saveSupplement,
@@ -70,6 +71,92 @@ async function confirmAll(
 }
 
 describe("補充／修正帳單資料庫流程", () => {
+  it("主結算與補充轉帳完成後可正常結束活動", async () => {
+    const { db, secret, book, event, actor } = await setup();
+    const mainPlan = settle(
+      statistics(event.members, book.expenses, book.payments),
+    ).map((transfer) => ({ ...transfer, id: crypto.randomUUID() }));
+    await startSettlement(db, {
+      secret,
+      revision: book.revision,
+      actor,
+      eventId: event.id,
+      plan: mainPlan,
+    });
+    await db.query(
+      `update ledger.settlements
+       set status='confirmed',paid_at=clock_timestamp(),
+           confirmed_at=clock_timestamp(),confirmation_method='manual'
+       where event_id=$1 and snapshot_id=(
+         select settlement_snapshot_id from ledger.events where id=$1
+       )`,
+      [event.id],
+    );
+    await db.query(
+      "select ledger.refresh_snapshot_status(settlement_snapshot_id) from ledger.events where id=$1",
+      [event.id],
+    );
+
+    let current = await read(db, secret);
+    const second = current.members[1].id;
+    const billId = await saveSupplement(db, {
+      secret,
+      revision: current.revision,
+      actor,
+      submit: true,
+      data: {
+        id: crypto.randomUUID(),
+        event_id: event.id,
+        kind: "expense",
+        source_expense_id: null,
+        reason: "漏記點心",
+        actor_confirm: true,
+        proposal: {
+          name: "點心",
+          date: event.start_date,
+          amount: 103,
+          payer_id: second,
+          category: "food",
+          note: "",
+          mode: "custom",
+          splits: [{ member_id: actor, share_amount: 103, weight: 1 }],
+        },
+      },
+    });
+    current = await read(db, secret);
+    let bill = current.supplemental_bills.find((row) => row.id === billId)!;
+    await confirmAll(db, secret, event.id, bill);
+    current = await read(db, secret);
+    bill = current.supplemental_bills.find((row) => row.id === billId)!;
+    await settleSupplement(db, {
+      secret,
+      revision: current.revision,
+      actor,
+      eventId: event.id,
+      billId,
+      versionId: bill.version.id,
+    });
+    await db.query(
+      `update ledger.settlements s
+       set status='confirmed',paid_at=clock_timestamp(),
+           confirmed_at=clock_timestamp(),confirmation_method='manual'
+       from ledger.settlement_snapshots ss
+       where s.snapshot_id=ss.id and ss.supplemental_bill_id=$1`,
+      [billId],
+    );
+    await db.query(
+      "select ledger.refresh_snapshot_status(id) from ledger.settlement_snapshots where supplemental_bill_id=$1",
+      [billId],
+    );
+
+    current = await read(db, secret);
+    await change(db, secret, current.revision, actor, "event.close", {
+      event_id: event.id,
+    });
+    current = await read(db, secret);
+    expect(current.events[0].status).toBe("closed");
+  });
+
   it("A、B 的補充費用只要求 A、B，結算不改寫主帳", async () => {
     const { db, secret, book, event, actor } = await setup();
     const second = book.members[1].id;

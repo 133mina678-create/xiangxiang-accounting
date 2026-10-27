@@ -134,9 +134,13 @@ describe("結算前個人消費明細確認 migration / RPC", () => {
       false,
     );
     await db.query(
-      `update ledger.settlement_review_rounds
-       set started_at=clock_timestamp()-interval '48 hours'+interval '1 second',
-           deadline_at=clock_timestamp()+interval '1 second'
+      `with boundary as (
+         select clock_timestamp()-interval '48 hours'+interval '1 second' started_at
+       )
+       update ledger.settlement_review_rounds
+       set started_at=boundary.started_at,
+           deadline_at=boundary.started_at+interval '48 hours'
+       from boundary
        where id=$1`,
       [roundId],
     );
@@ -155,9 +159,13 @@ describe("結算前個人消費明細確認 migration / RPC", () => {
       }),
     ).rejects.toThrow("48 小時");
     await db.query(
-      `update ledger.settlement_review_rounds
-       set started_at=clock_timestamp()-interval '48 hours',
-           deadline_at=clock_timestamp()
+      `with boundary as (
+         select clock_timestamp()-interval '48 hours' started_at
+       )
+       update ledger.settlement_review_rounds
+       set started_at=boundary.started_at,
+           deadline_at=boundary.started_at+interval '48 hours'
+       from boundary
        where id=$1`,
       [roundId],
     );
