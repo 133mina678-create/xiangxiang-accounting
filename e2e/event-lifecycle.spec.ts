@@ -20,8 +20,36 @@ test("奶油 UI 響應式與管理刪除還原", async ({ page, request }) => {
   });
   await page.getByRole("button", { name: "新增活動", exact: true }).click();
   await page.getByLabel("活動名稱").fill("安全刪除測試");
+  for (const name of ["星醬", "無語", "庫莫", "千瑾", "兔子草"]) {
+    await page
+      .getByRole("dialog")
+      .getByRole("button", { name, exact: false })
+      .click();
+  }
   await page.getByRole("button", { name: "建立活動", exact: true }).click();
   await page.getByRole("button", { name: /安全刪除測試/ }).click();
+  await page.getByRole("button", { name: "最後怎麼付？", exact: true }).click();
+  const reviewPanel = page.locator(".review-panel");
+  await reviewPanel
+    .getByRole("button", { name: "發起明細確認", exact: true })
+    .click();
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "確認發起", exact: true })
+    .click();
+  await reviewPanel
+    .getByRole("button", { name: "確認明細正確", exact: true })
+    .click();
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "確認明細正確", exact: true })
+    .click();
+  await page.getByRole("button", { name: "開始結算", exact: true }).click();
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "確認開始結算", exact: true })
+    .click();
+  await page.getByRole("button", { name: "帳目", exact: true }).click();
   await page.getByRole("button", { name: "結束活動", exact: true }).click();
   await page.getByRole("button", { name: "確認", exact: true }).click();
   await page.getByRole("button", { name: "所有活動", exact: true }).click();
@@ -31,6 +59,9 @@ test("奶油 UI 響應式與管理刪除還原", async ({ page, request }) => {
   });
   await expect(deletePastEvent).toBeVisible();
   await deletePastEvent.click();
+  await page
+    .getByLabel("輸入活動名稱以確認", { exact: true })
+    .fill("安全刪除測試");
   await page
     .getByLabel("活動管理密碼", { exact: true })
     .fill("incorrect-password");

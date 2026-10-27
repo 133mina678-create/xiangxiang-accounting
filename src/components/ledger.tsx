@@ -27,6 +27,9 @@ import {
   transitionTransfer,
   startSettlement,
   cancelSettlement,
+  startSettlementReview,
+  transitionSettlementReview,
+  cancelSettlementReview,
   manageEvent,
 } from "@/lib/api";
 import {
@@ -37,6 +40,7 @@ import {
   transferTotalsForMember,
 } from "@/lib/calculations";
 import { transferRecipient } from "@/lib/payment-info";
+import { copyText } from "@/lib/clipboard";
 import { categories, money } from "@/lib/types";
 import type {
   Book,
@@ -44,6 +48,7 @@ import type {
   Expense,
   Member,
   Payment,
+  SettlementReview,
   Transfer,
 } from "@/lib/types";
 import { EventForm, ExpenseForm, Modal, Person, FormError } from "./forms";
@@ -52,6 +57,8 @@ import {
   TransferProofDialog,
   TransferProofViewer,
 } from "./transfer-proof-dialog";
+import { reviewEligibility } from "@/lib/settlement-review";
+import { SettlementReviewPanel } from "./settlement-review";
 
 type Dialog =
   | { kind: "identity" }
@@ -73,6 +80,11 @@ type Dialog =
       action: "confirm" | "dispute" | "withdraw";
     }
   | { kind: "settlement-confirm"; action: "start" | "cancel" }
+  | {
+      kind: "review-confirm";
+      action: "start" | "confirm" | "cancel" | "withdraw";
+    }
+  | { kind: "review-dispute" }
   | { kind: "event-lifecycle"; event: Event; action: "delete" | "restore" }
   | { kind: "recently-deleted" }
   | { kind: "settings" }
@@ -90,7 +102,9 @@ export default function Ledger({ secret }: { secret: string }) {
     [syncedAt, setSyncedAt] = useState(0),
     [managementEnabled, setManagementEnabled] = useState(false),
     [adminSecret, setAdminSecret] = useState(""),
-    [deleteConfirmation, setDeleteConfirmation] = useState("");
+    [deleteConfirmation, setDeleteConfirmation] = useState(""),
+    [reviewReason, setReviewReason] = useState(""),
+    [reviewExpense, setReviewExpense] = useState("");
   const [day, setDay] = useState(""),
     [payer, setPayer] = useState(""),
     [category, setCategory] = useState(""),
@@ -290,8 +304,23 @@ export default function Ledger({ secret }: { secret: string }) {
   const event = book.events.find((e) => e.id === eventId && !e.deleted_at);
   const eventIsClosed = event?.status === "closed";
   const settlementLocked = event?.settlement_state === "locked";
+  const eventReviews = (book.reviews ?? []).filter(
+    (review) => review.event_id === eventId,
+  );
+  const openReview = eventReviews.find((review) => review.status === "open");
+  const settledReview = [...eventReviews]
+    .reverse()
+    .find((review) => review.status === "settled");
+  const displayedReview: SettlementReview | undefined = settlementLocked
+    ? settledReview
+    : openReview;
+  const currentReviewEligibility = reviewEligibility(openReview);
   const eventEditable = Boolean(
-    event && !event.deleted_at && !eventIsClosed && !settlementLocked,
+    event &&
+    !event.deleted_at &&
+    !eventIsClosed &&
+    !settlementLocked &&
+    !openReview,
   );
   const expenses = book.expenses.filter(
     (e) => e.event_id === eventId && !e.deleted_at,
@@ -645,6 +674,15 @@ export default function Ledger({ secret }: { secret: string }) {
                   </span>
                 </div>
               )}
+              {!eventIsClosed && openReview && (
+                <div className="review-lock-banner" role="status">
+                  <Lock size={18} />
+                  <span>
+                    <strong>個人明細確認進行中</strong>
+                    待核對內容已固定；如需修正，請先取消本輪確認
+                  </span>
+                </div>
+              )}
               <div className="event-tools">
                 {eventEditable && (
                   <button
@@ -664,8 +702,12 @@ export default function Ledger({ secret }: { secret: string }) {
                     className="text-link"
                     disabled={busy}
                     onClick={() => {
-                      if (!settlementLocked && expenses.length > 0) {
-                        setError("請先到「最後怎麼付？」開始正式結算。");
+                      if (!settlementLocked) {
+                        setError(
+                          openReview
+                            ? "請先完成本輪核對並開始正式結算。"
+                            : "請先到「最後怎麼付？」發起個人明細確認。",
+                        );
                         return;
                       }
                       if (hasUnfinishedPayments) {
@@ -1034,6 +1076,51 @@ export default function Ledger({ secret }: { secret: string }) {
               )}
               {tab === "settle" && (
                 <section className="settlement">
+                  <SettlementReviewPanel
+                    event={event}
+                    review={displayedReview}
+                    members={book.members}
+                    expenses={expenses}
+                    actor={actor}
+                    settlementLocked={settlementLocked}
+                    busy={busy}
+                    onViewMine={() => {
+                      setSpendingPerson(actor);
+                      setStatsDay("");
+                      setTab("stats");
+                    }}
+                    onStart={() =>
+                      setDialog({ kind: "review-confirm", action: "start" })
+                    }
+                    onConfirm={() =>
+                      setDialog({ kind: "review-confirm", action: "confirm" })
+                    }
+                    onDispute={() => {
+                      setReviewReason("");
+                      setReviewExpense("");
+                      setDialog({ kind: "review-dispute" });
+                    }}
+                    onWithdrawDispute={() =>
+                      setDialog({ kind: "review-confirm", action: "withdraw" })
+                    }
+                    onCancel={() =>
+                      setDialog({ kind: "review-confirm", action: "cancel" })
+                    }
+                    onCopyReminder={() => {
+                      if (!openReview) return;
+                      const deadline = new Intl.DateTimeFormat("zh-TW", {
+                        timeZone: "Asia/Taipei",
+                        dateStyle: "medium",
+                        timeStyle: "short",
+                      }).format(new Date(openReview.deadline_at));
+                      const reminder = `【${event.name}】第 ${openReview.round_number} 輪個人消費明細確認\n截止：${deadline}\n請開啟共同帳本核對自己的代墊與分攤：${window.location.href}`;
+                      void copyText(reminder)
+                        .then(() => setNotice("已複製明細確認提醒"))
+                        .catch(() =>
+                          setError("無法複製提醒，請確認瀏覽器權限。"),
+                        );
+                    }}
+                  />
                   <div className="section-title">
                     <div>
                       <p className="eyebrow">少轉幾筆，多一點輕鬆</p>
@@ -1105,7 +1192,7 @@ export default function Ledger({ secret }: { secret: string }) {
                         </p>
                       </div>
                       {!settlementLocked ? (
-                        expenses.length > 0 && (
+                        openReview && currentReviewEligibility.eligible ? (
                           <button
                             className="primary"
                             disabled={busy}
@@ -1118,6 +1205,14 @@ export default function Ledger({ secret }: { secret: string }) {
                           >
                             <Lock size={17} /> 開始結算
                           </button>
+                        ) : (
+                          <span className="snapshot-note">
+                            {openReview
+                              ? currentReviewEligibility.activeDisputes
+                                ? "請先處理明細異議"
+                                : "等待全員確認或 48 小時期限到達"
+                              : "請先發起個人明細確認"}
+                          </span>
                         )
                       ) : canCancelSettlement ? (
                         <button
@@ -1612,6 +1707,180 @@ export default function Ledger({ secret }: { secret: string }) {
             </div>
           </Modal>
         )}
+        {dialog?.kind === "review-confirm" && event && (
+          <Modal
+            title={
+              {
+                start: "發起個人明細確認？",
+                confirm: "確認這份個人明細？",
+                cancel: "取消本輪明細確認？",
+                withdraw: "撤回明細異議？",
+              }[dialog.action]
+            }
+            onClose={() => setDialog(null)}
+          >
+            {dialog.action === "start" ? (
+              <p>
+                建立後會固定本輪帳目 48
+                小時。期間不能新增、修改、刪除或還原消費，也不能變更活動成員；如需修正，必須取消本輪後重新發起。
+              </p>
+            ) : dialog.action === "confirm" ? (
+              <div className="review-confirm-copy">
+                <strong>
+                  目前以 {member(actor).icon} {member(actor).name} 身分確認
+                </strong>
+                <p>
+                  我已核對本輪個人消費明細，確認目前列出的代墊與分攤內容正確。
+                </p>
+                <small>
+                  身分選擇是朋友間協作紀錄，並非無法冒名的登入驗證。
+                </small>
+              </div>
+            ) : dialog.action === "cancel" ? (
+              <p>
+                本輪會保留為取消紀錄，帳目恢復可編輯。修正後需重新發起完整的 48
+                小時確認，舊確認不會沿用。
+              </p>
+            ) : (
+              <p>撤回後仍是未確認狀態；若內容正確，請再按「確認明細正確」。</p>
+            )}
+            <div className="two-col">
+              <button
+                className="secondary"
+                disabled={busy}
+                onClick={() => setDialog(null)}
+              >
+                返回
+              </button>
+              <button
+                className={
+                  dialog.action === "cancel" ? "danger-button" : "primary"
+                }
+                disabled={busy}
+                onClick={async () => {
+                  if (!event) return;
+                  try {
+                    if (dialog.action === "start") {
+                      await runTransferMutation(() =>
+                        startSettlementReview(
+                          secret,
+                          revision.current,
+                          actor,
+                          event.id,
+                        ),
+                      );
+                      setNotice("已發起 48 小時個人明細確認");
+                    } else if (dialog.action === "cancel" && openReview) {
+                      await runTransferMutation(() =>
+                        cancelSettlementReview(
+                          secret,
+                          revision.current,
+                          actor,
+                          event.id,
+                          openReview.id,
+                        ),
+                      );
+                      setNotice("已取消本輪確認，可以返回編輯帳目");
+                    } else if (openReview) {
+                      await runTransferMutation(() =>
+                        transitionSettlementReview(
+                          secret,
+                          actor,
+                          event.id,
+                          openReview.id,
+                          dialog.action === "confirm"
+                            ? "confirm"
+                            : "withdraw_dispute",
+                        ),
+                      );
+                      setNotice(
+                        dialog.action === "confirm"
+                          ? "已確認本輪個人消費明細"
+                          : "已撤回異議，狀態改為未確認",
+                      );
+                    }
+                    setDialog(null);
+                  } catch {
+                    // Shared error feedback already explains the failure.
+                  }
+                }}
+              >
+                {busy
+                  ? "處理中…"
+                  : dialog.action === "start"
+                    ? "確認發起"
+                    : dialog.action === "confirm"
+                      ? "確認明細正確"
+                      : dialog.action === "cancel"
+                        ? "確認取消本輪"
+                        : "確認撤回異議"}
+              </button>
+            </div>
+          </Modal>
+        )}
+        {dialog?.kind === "review-dispute" && event && openReview && (
+          <Modal title="回報明細問題" onClose={() => setDialog(null)}>
+            <p>
+              目前以 {member(actor).icon} {member(actor).name}{" "}
+              身分回報。提出後會取消你的已確認狀態，並阻擋正式結算，直到你自行撤回。
+            </p>
+            <label>
+              關聯消費（選填）
+              <select
+                value={reviewExpense}
+                onChange={(e) => setReviewExpense(e.target.value)}
+              >
+                <option value="">整體明細</option>
+                {expenses.map((expense) => (
+                  <option key={expense.id} value={expense.id}>
+                    {expense.date} · {expense.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              問題原因
+              <textarea
+                aria-label="明細問題原因"
+                required
+                maxLength={300}
+                value={reviewReason}
+                onChange={(e) => setReviewReason(e.target.value)}
+                placeholder="例如：這筆晚餐沒有參加，請協助確認"
+              />
+            </label>
+            <div className="two-col">
+              <button className="secondary" onClick={() => setDialog(null)}>
+                返回
+              </button>
+              <button
+                className="danger-button"
+                disabled={busy || !reviewReason.trim()}
+                onClick={async () => {
+                  try {
+                    await runTransferMutation(() =>
+                      transitionSettlementReview(
+                        secret,
+                        actor,
+                        event.id,
+                        openReview.id,
+                        "dispute",
+                        reviewReason,
+                        reviewExpense || undefined,
+                      ),
+                    );
+                    setNotice("已提出明細問題，正式結算暫停");
+                    setDialog(null);
+                  } catch {
+                    // Shared error feedback already explains the failure.
+                  }
+                }}
+              >
+                {busy ? "送出中…" : "送出問題"}
+              </button>
+            </div>
+          </Modal>
+        )}
         {dialog?.kind === "settlement-confirm" && event && (
           <Modal
             title={
@@ -1624,6 +1893,22 @@ export default function Ledger({ secret }: { secret: string }) {
                 ? "系統會保存目前所有消費、分攤與收付款關係，並鎖定帳目。開始後不能修改或刪除已納入結算的消費。"
                 : "取消後會刪除尚未付款的正式交易並返回編輯。已有付款提交時不能取消。"}
             </p>
+            {dialog.action === "start" &&
+              openReview &&
+              currentReviewEligibility.expired &&
+              !currentReviewEligibility.allConfirmed && (
+                <div className="review-expiry-confirmation" role="note">
+                  <strong>期限已到，但這不代表所有人都已確認。</strong>
+                  <p>
+                    尚未確認：
+                    {openReview.participants
+                      .filter((participant) => !participant.confirmed_at)
+                      .map((participant) => member(participant.member_id).name)
+                      .join("、")}
+                  </p>
+                  <p>目前沒有未撤回的異議，因此可以手動開始正式結算。</p>
+                </div>
+              )}
             <div className="two-col">
               <button
                 className="secondary"

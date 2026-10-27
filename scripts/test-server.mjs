@@ -140,6 +140,35 @@ const server = createServer(async (req, res) => {
         ],
       );
       res.end(JSON.stringify(result.rows[0].result));
+    } else if (req.url === "/rest/v1/rpc/start_settlement_review") {
+      const result = await db.query(
+        "select public.start_settlement_review($1,$2,$3,$4) result",
+        [p.p_secret, p.p_revision, p.p_actor, p.p_event],
+      );
+      res.end(JSON.stringify(result.rows[0].result));
+    } else if (req.url === "/rest/v1/rpc/transition_settlement_review") {
+      const result = await db.query(
+        "select public.transition_settlement_review($1,$2,$3,$4,$5,$6,$7) result",
+        [
+          p.p_secret,
+          p.p_actor,
+          p.p_event,
+          p.p_round,
+          p.p_action,
+          p.p_reason,
+          p.p_expense,
+        ],
+      );
+      res.end(JSON.stringify(result.rows[0].result));
+    } else if (req.url === "/rest/v1/rpc/cancel_settlement_review") {
+      await db.query("select public.cancel_settlement_review($1,$2,$3,$4,$5)", [
+        p.p_secret,
+        p.p_revision,
+        p.p_actor,
+        p.p_event,
+        p.p_round,
+      ]);
+      res.end("null");
     } else if (req.url === "/rest/v1/rpc/cancel_settlement") {
       await db.query("select public.cancel_settlement($1,$2,$3,$4)", [
         p.p_secret,

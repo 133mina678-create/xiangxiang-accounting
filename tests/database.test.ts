@@ -1042,6 +1042,7 @@ describe("真實 migration / PostgreSQL RPC", () => {
           actor: before.members[0].id,
           eventId: before.events[0].id,
           plan,
+          prepareReview: false,
         }),
       ).rejects.toThrow("conflict");
       const after = await read(isolated.db, isolated.secret);
@@ -1269,7 +1270,7 @@ describe("真實 migration / PostgreSQL RPC", () => {
     const checks = await db.query<{ check_name: string; passed: boolean }>(
       await readFile("supabase/verify.sql", "utf8"),
     );
-    expect(checks.rows).toHaveLength(14);
+    expect(checks.rows).toHaveLength(15);
     for (const check of checks.rows)
       expect(check.passed, check.check_name).toBe(true);
   });
@@ -1330,6 +1331,14 @@ describe("真實 migration / PostgreSQL RPC", () => {
           members: [b.members[0].id],
         },
       );
+      b = await read(isolated.db, isolated.secret);
+      await startSettlement(isolated.db, {
+        secret: isolated.secret,
+        revision: b.revision,
+        actor: b.members[0].id,
+        eventId,
+        plan: [],
+      });
       b = await read(isolated.db, isolated.secret);
       await isolated.db.exec("set role anon");
       await expect(

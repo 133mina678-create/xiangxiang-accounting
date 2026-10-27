@@ -102,6 +102,63 @@ export async function cancelSettlement(
   if (error) throwRpcError(error.message);
 }
 
+export async function startSettlementReview(
+  secret: string,
+  revision: number,
+  actor: string,
+  eventId: string,
+) {
+  if (!client) throw new Error("尚未連接雲端帳本");
+  const { data, error } = await client.rpc("start_settlement_review", {
+    p_secret: secret,
+    p_revision: revision,
+    p_actor: actor,
+    p_event: eventId,
+  });
+  if (error) throwRpcError(error.message);
+  return data as string;
+}
+
+export async function transitionSettlementReview(
+  secret: string,
+  actor: string,
+  eventId: string,
+  roundId: string,
+  action: "confirm" | "dispute" | "withdraw_dispute",
+  reason?: string,
+  expenseId?: string,
+) {
+  if (!client) throw new Error("尚未連接雲端帳本");
+  const { error } = await client.rpc("transition_settlement_review", {
+    p_secret: secret,
+    p_actor: actor,
+    p_event: eventId,
+    p_round: roundId,
+    p_action: action,
+    p_reason: reason ?? null,
+    p_expense: expenseId ?? null,
+  });
+  if (error) throwRpcError(error.message);
+}
+
+export async function cancelSettlementReview(
+  secret: string,
+  revision: number,
+  actor: string,
+  eventId: string,
+  roundId: string,
+) {
+  if (!client) throw new Error("尚未連接雲端帳本");
+  const { error } = await client.rpc("cancel_settlement_review", {
+    p_secret: secret,
+    p_revision: revision,
+    p_actor: actor,
+    p_event: eventId,
+    p_round: roundId,
+  });
+  if (error) throwRpcError(error.message);
+}
+
 async function parseResponse(response: Response) {
   const body = (await response.json().catch(() => ({}))) as { error?: string };
   if (!response.ok) throw new Error(body.error || "操作未完成，請稍後再試。");

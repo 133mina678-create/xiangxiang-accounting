@@ -73,6 +73,34 @@ export type Payment = Transfer & {
   updated_at: string;
   created_at: string;
 };
+export type SettlementReviewParticipant = {
+  member_id: string;
+  confirmed_at: string | null;
+};
+export type SettlementReviewDispute = {
+  id: string;
+  member_id: string;
+  expense_id: string | null;
+  reason: string;
+  created_at: string;
+  withdrawn_at: string | null;
+};
+export type SettlementReview = {
+  id: string;
+  event_id: string;
+  round_number: number;
+  source_revision: number;
+  started_by: string;
+  started_at: string;
+  deadline_at: string;
+  deadline_reached: boolean;
+  can_start: boolean;
+  status: "open" | "settled" | "canceled";
+  settled_at: string | null;
+  canceled_at: string | null;
+  participants: SettlementReviewParticipant[];
+  disputes: SettlementReviewDispute[];
+};
 export type Log = {
   id: string;
   actor_id: string;
@@ -88,6 +116,7 @@ export type Book = {
   deleted_events?: (Event & { expense_count: number })[];
   expenses: Expense[];
   payments: Payment[];
+  reviews: SettlementReview[];
   logs: Log[];
 };
 export const categories = [

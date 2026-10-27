@@ -78,6 +78,14 @@ it("soft delete hides data, blocks writes, restores unchanged IDs/splits and iso
 it("closed empty activity stays closed after restore", async () => {
   let b = await read(db, secret);
   const e = b.events.find((x) => x.name === "other")!;
+  await startSettlement(db, {
+    secret,
+    revision: b.revision,
+    actor: b.members[0].id,
+    eventId: e.id,
+    plan: [],
+  });
+  b = await read(db, secret);
   await change(db, secret, b.revision, b.members[0].id, "event.close", {
     event_id: e.id,
   });

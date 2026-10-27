@@ -166,6 +166,30 @@ test("手機完整流程、雙人同步、衝突、復原、自訂與份數、�
       .getByRole("button", { name, exact: false })
       .click();
   };
+  const completeSettlementReview = async (names: string[]) => {
+    const reviewPanel = page.locator(".review-panel");
+    await reviewPanel
+      .getByRole("button", { name: "發起明細確認", exact: true })
+      .click();
+    await page
+      .getByRole("dialog")
+      .getByRole("button", { name: "確認發起", exact: true })
+      .click();
+    for (const name of names) {
+      await selectIdentity(name);
+      await reviewPanel
+        .getByRole("button", { name: "確認明細正確", exact: true })
+        .click();
+      await expect(page.getByRole("dialog")).toContainText(name);
+      await page
+        .getByRole("dialog")
+        .getByRole("button", { name: "確認明細正確", exact: true })
+        .click();
+    }
+    await expect(
+      reviewPanel.getByText("可開始結算", { exact: false }),
+    ).toBeVisible();
+  };
   await page.getByRole("button", { name: "只看我的", exact: true }).click();
   await page.getByLabel("查看成員").selectOption({
     label: (
@@ -180,6 +204,14 @@ test("手機完整流程、雙人同步、衝突、復原、自訂與份數、�
       .first(),
   ).toBeVisible();
   await page.getByRole("button", { name: "全部結算", exact: true }).click();
+  await completeSettlementReview([
+    "厚諾",
+    "星醬",
+    "無語",
+    "庫莫",
+    "千瑾",
+    "兔子草",
+  ]);
   await page.getByRole("button", { name: "開始結算", exact: true }).click();
   await page.getByRole("button", { name: "確認開始結算", exact: true }).click();
   await expect(
@@ -236,7 +268,7 @@ test("手機完整流程、雙人同步、衝突、復原、自訂與份數、�
   await page.reload();
   await page.getByRole("button", { name: /台北三天兩夜/ }).click();
   await page.getByRole("button", { name: "最後怎麼付？", exact: true }).click();
-  await expect(page.getByText("已確認", { exact: true })).toBeVisible();
+  await expect(page.locator(".status-pill.confirmed").first()).toBeVisible();
   // 兔子草's newly supplied postal account is masked on screen and copied in full.
   await page.getByRole("button", { name: "所有活動", exact: true }).click();
   await page.getByRole("button", { name: "新增活動", exact: true }).click();
@@ -290,6 +322,7 @@ test("手機完整流程、雙人同步、衝突、復原、自訂與份數、�
   await page.getByRole("button", { name: "儲存消費", exact: true }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await page.getByRole("button", { name: "最後怎麼付？", exact: true }).click();
+  await completeSettlementReview(["厚諾"]);
   await page.getByRole("button", { name: "開始結算", exact: true }).click();
   await page.getByRole("button", { name: "確認開始結算", exact: true }).click();
   await expect(page.getByText("目前沒有需要結算的費用")).toBeVisible();
@@ -334,6 +367,14 @@ test("手機完整流程、雙人同步、衝突、復原、自訂與份數、�
   await page.getByRole("button", { name: "統計", exact: true }).click();
   await expect(page.getByText("小明", { exact: true }).first()).toBeVisible();
   await page.getByRole("button", { name: "最後怎麼付？", exact: true }).click();
+  await completeSettlementReview([
+    "厚諾",
+    "星醬",
+    "無語",
+    "庫莫",
+    "千瑾",
+    "兔子草",
+  ]);
   await page.getByRole("button", { name: "開始結算", exact: true }).click();
   await page.getByRole("button", { name: "確認開始結算", exact: true }).click();
   const guestTransfer = page

@@ -104,14 +104,108 @@ export async function startSettlement(
     actor: string;
     eventId: string;
     plan: (Transfer & { id: string })[];
+    prepareReview?: boolean;
   },
 ) {
+  let revision = input.revision;
+  if (input.prepareReview !== false) {
+    let book = await read(db, input.secret);
+    let review = book.reviews.find(
+      (candidate) =>
+        candidate.event_id === input.eventId && candidate.status === "open",
+    );
+    if (!review) {
+      await startReview(db, {
+        secret: input.secret,
+        revision: book.revision,
+        actor: input.actor,
+        eventId: input.eventId,
+      });
+      book = await read(db, input.secret);
+      review = book.reviews.find(
+        (candidate) =>
+          candidate.event_id === input.eventId && candidate.status === "open",
+      )!;
+    }
+    for (const participant of review.participants) {
+      if (!participant.confirmed_at)
+        await transitionReview(db, {
+          secret: input.secret,
+          actor: participant.member_id,
+          eventId: input.eventId,
+          roundId: review.id,
+          action: "confirm",
+        });
+    }
+    revision = (await read(db, input.secret)).revision;
+  }
   await db.query("select public.start_settlement($1,$2,$3,$4,$5)", [
+    input.secret,
+    revision,
+    input.actor,
+    input.eventId,
+    JSON.stringify(input.plan),
+  ]);
+}
+
+export async function startReview(
+  db: PGlite,
+  input: {
+    secret: string;
+    revision: number;
+    actor: string;
+    eventId: string;
+  },
+) {
+  const result = await db.query<{ id: string }>(
+    "select public.start_settlement_review($1,$2,$3,$4) id",
+    [input.secret, input.revision, input.actor, input.eventId],
+  );
+  return result.rows[0].id;
+}
+
+export async function transitionReview(
+  db: PGlite,
+  input: {
+    secret: string;
+    actor: string;
+    eventId: string;
+    roundId: string;
+    action: "confirm" | "dispute" | "withdraw_dispute";
+    reason?: string;
+    expenseId?: string;
+  },
+) {
+  await db.query(
+    "select public.transition_settlement_review($1,$2,$3,$4,$5,$6,$7)",
+    [
+      input.secret,
+      input.actor,
+      input.eventId,
+      input.roundId,
+      input.action,
+      input.reason ?? null,
+      input.expenseId ?? null,
+    ],
+  );
+}
+
+export async function cancelReview(
+  db: PGlite,
+  input: {
+    secret: string;
+    revision: number;
+    actor: string;
+    eventId: string;
+    roundId: string;
+  },
+) {
+  await db.query("select public.cancel_settlement_review($1,$2,$3,$4,$5)", [
     input.secret,
     input.revision,
     input.actor,
     input.eventId,
-    JSON.stringify(input.plan),
+    input.roundId,
   ]);
 }
 export async function cancelSettlement(

@@ -1,7 +1,7 @@
 -- Read-only checks. Run in SQL Editor; every passed column should be true.
 -- Does not display workspace identifiers, book secrets or user data.
-select '11 internal tables exist with RLS' as check_name,
- (select count(*)=11 and bool_and(c.relrowsecurity)
+select '14 internal tables exist with RLS' as check_name,
+ (select count(*)=14 and bool_and(c.relrowsecurity)
   from pg_class c join pg_namespace n on n.oid=c.relnamespace
   where n.nspname='ledger' and c.relkind='r') as passed
 union all
@@ -51,6 +51,20 @@ select 'settlement lock triggers are installed and private',
    'event_members_settlement_lock','events_settlement_lock') and not tgisinternal)=4
  and not has_function_privilege('anon',to_regprocedure('ledger.guard_locked_event_data()'),'EXECUTE')
  and not has_function_privilege('anon',to_regprocedure('ledger.guard_locked_event_details()'),'EXECUTE')
+union all
+select 'pre-settlement review RPCs and database locks are active',
+ (select count(*)=3 and bool_and(
+   p.prosecdef and p.proconfig @> array['search_path=""']
+   and has_function_privilege('anon',p.oid,'EXECUTE')
+  ) from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+  where n.nspname='public' and p.proname in (
+   'start_settlement_review','transition_settlement_review','cancel_settlement_review'
+  ))
+ and (select count(*) from pg_trigger where tgname in (
+  'expenses_review_lock','expense_splits_review_lock','event_members_review_lock',
+  'expense_discounts_review_lock','events_review_lock'
+ ) and not tgisinternal)=5
+ and not has_function_privilege('anon',to_regprocedure('public.start_settlement_v1(text,integer,uuid,uuid,jsonb)'),'EXECUTE')
 union all
 select 'transfer proof RPCs are server-only',
  (select count(*)=8 and bool_and(
