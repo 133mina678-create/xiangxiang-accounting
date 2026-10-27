@@ -1270,7 +1270,7 @@ describe("真實 migration / PostgreSQL RPC", () => {
     const checks = await db.query<{ check_name: string; passed: boolean }>(
       await readFile("supabase/verify.sql", "utf8"),
     );
-    expect(checks.rows).toHaveLength(15);
+    expect(checks.rows).toHaveLength(16);
     for (const check of checks.rows)
       expect(check.passed, check.check_name).toBe(true);
   });

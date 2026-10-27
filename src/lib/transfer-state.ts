@@ -8,6 +8,8 @@ export const PROOF_TYPES = ["image/jpeg", "image/png", "image/webp"] as const;
 export const settlementStatusLabel: Record<SettlementStatus, string> = {
   record_only: "記帳資料",
   pending_payment: "待付款",
+  paused: "付款已暫停",
+  superseded: "已由修正取代",
   awaiting_confirmation: "等待收款人確認",
   disputed: "尚未收到／有問題",
   confirmed: "已確認",

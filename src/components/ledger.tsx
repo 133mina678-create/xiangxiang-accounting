@@ -19,6 +19,7 @@ import {
   RefreshCw,
   ArchiveRestore,
   ShieldCheck,
+  FilePenLine,
 } from "lucide-react";
 import {
   readBook,
@@ -30,6 +31,10 @@ import {
   startSettlementReview,
   transitionSettlementReview,
   cancelSettlementReview,
+  saveSupplementalBill,
+  transitionSupplementalBill,
+  cancelSupplementalBill,
+  settleSupplementalBill,
   manageEvent,
 } from "@/lib/api";
 import {
@@ -49,6 +54,7 @@ import type {
   Member,
   Payment,
   SettlementReview,
+  SupplementalBill,
   Transfer,
 } from "@/lib/types";
 import { EventForm, ExpenseForm, Modal, Person, FormError } from "./forms";
@@ -59,6 +65,7 @@ import {
 } from "./transfer-proof-dialog";
 import { reviewEligibility } from "@/lib/settlement-review";
 import { SettlementReviewPanel } from "./settlement-review";
+import { SupplementalBills } from "./supplemental-bills";
 
 type Dialog =
   | { kind: "identity" }
@@ -85,6 +92,17 @@ type Dialog =
       action: "start" | "confirm" | "cancel" | "withdraw";
     }
   | { kind: "review-dispute" }
+  | {
+      kind: "supplement-form";
+      bill?: SupplementalBill;
+      source?: Expense;
+    }
+  | {
+      kind: "supplement-action";
+      bill: SupplementalBill;
+      action:
+        "confirm" | "dispute" | "reject" | "withdraw" | "settle" | "cancel";
+    }
   | { kind: "event-lifecycle"; event: Event; action: "delete" | "restore" }
   | { kind: "recently-deleted" }
   | { kind: "settings" }
@@ -104,7 +122,8 @@ export default function Ledger({ secret }: { secret: string }) {
     [adminSecret, setAdminSecret] = useState(""),
     [deleteConfirmation, setDeleteConfirmation] = useState(""),
     [reviewReason, setReviewReason] = useState(""),
-    [reviewExpense, setReviewExpense] = useState("");
+    [reviewExpense, setReviewExpense] = useState(""),
+    [supplementReason, setSupplementReason] = useState("");
   const [day, setDay] = useState(""),
     [payer, setPayer] = useState(""),
     [category, setCategory] = useState(""),
@@ -278,6 +297,79 @@ export default function Ledger({ secret }: { secret: string }) {
       setError("無法複製，請直接複製瀏覽器網址。");
     }
   };
+  const saveSupplement = async (
+    payload: Record<string, unknown>,
+    submit: boolean,
+    expected: number,
+  ) => {
+    try {
+      await runTransferMutation(() =>
+        saveSupplementalBill(secret, expected, actor, payload, submit),
+      );
+      setNotice(
+        submit ? "已送出補充帳單，48 小時確認開始" : "已儲存補充帳單草稿",
+      );
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  const runSupplementAction = async (
+    bill: SupplementalBill,
+    action: "confirm" | "dispute" | "reject" | "withdraw" | "settle" | "cancel",
+    event: Event,
+  ) => {
+    try {
+      if (["confirm", "dispute", "reject", "withdraw"].includes(action)) {
+        await runTransferMutation(() =>
+          transitionSupplementalBill(
+            secret,
+            actor,
+            event.id,
+            bill.id,
+            bill.version.id,
+            action as "confirm" | "dispute" | "reject" | "withdraw",
+            supplementReason,
+          ),
+        );
+      } else if (action === "settle") {
+        await runTransferMutation(() =>
+          settleSupplementalBill(
+            secret,
+            revision.current,
+            actor,
+            event.id,
+            bill.id,
+            bill.version.id,
+          ),
+        );
+      } else {
+        await runTransferMutation(() =>
+          cancelSupplementalBill(
+            secret,
+            revision.current,
+            actor,
+            event.id,
+            bill.id,
+          ),
+        );
+      }
+      setNotice(
+        action === "settle"
+          ? "已完成補充結算"
+          : action === "confirm"
+            ? "已確認這版帳單"
+            : action === "withdraw"
+              ? "已撤回問題，狀態回到未確認"
+              : action === "cancel"
+                ? "已取消這張補充帳單"
+                : "已記錄你的回覆，結算目前暫停",
+      );
+      setDialog(null);
+    } catch {
+      // Shared error feedback already explains the failure.
+    }
+  };
   if (!book)
     return (
       <main className="welcome">
@@ -326,6 +418,12 @@ export default function Ledger({ secret }: { secret: string }) {
     (e) => e.event_id === eventId && !e.deleted_at,
   );
   const payments = book.payments.filter((p) => p.event_id === eventId);
+  const supplementalBills = (book.supplemental_bills ?? []).filter(
+    (bill) => bill.event_id === eventId,
+  );
+  const mainPayments = payments.filter(
+    (payment) => payment.source_kind !== "supplemental",
+  );
   const pendingPayments = payments.filter((p) =>
     ["pending_payment", "record_only"].includes(p.status),
   );
@@ -335,6 +433,7 @@ export default function Ledger({ secret }: { secret: string }) {
   const completedPayments = payments.filter((p) =>
     ["confirmed", "auto_confirmed"].includes(p.status),
   );
+  const pausedPayments = payments.filter((p) => p.status === "paused");
   const awaitingCount = payments.filter(
     (p) => p.status === "awaiting_confirmation",
   ).length;
@@ -370,7 +469,9 @@ export default function Ledger({ secret }: { secret: string }) {
     }),
     { gross: 0, discount: 0, spent: 0, paid: 0 },
   );
-  const balances = event ? statistics(event.members, expenses, payments) : [];
+  const balances = event
+    ? statistics(event.members, expenses, mainPayments)
+    : [];
   const transfers = settlementLocked ? [] : settle(balances);
   const guestTransfers = transfers.filter(
     (transfer) =>
@@ -389,13 +490,19 @@ export default function Ledger({ secret }: { secret: string }) {
     (fixedBalances.some((balance) => balance.remaining > 0) &&
       fixedBalances.some((balance) => balance.remaining < 0)) ||
     payments.some((payment) =>
-      ["pending_payment", "awaiting_confirmation", "disputed"].includes(
-        payment.status,
-      ),
+      [
+        "pending_payment",
+        "awaiting_confirmation",
+        "disputed",
+        "paused",
+      ].includes(payment.status),
+    ) ||
+    supplementalBills.some((bill) =>
+      ["draft", "reviewing"].includes(bill.status),
     );
   const canCancelSettlement =
     settlementLocked &&
-    payments.every((payment) =>
+    mainPayments.every((payment) =>
       ["pending_payment", "record_only"].includes(payment.status),
     );
   const selectedSettlementPerson =
@@ -407,7 +514,9 @@ export default function Ledger({ secret }: { secret: string }) {
     settlementView === "all"
       ? rows
       : transfersForMember(rows, selectedSettlementPerson);
-  const settlementRows: Transfer[] = settlementLocked ? payments : transfers;
+  const settlementRows: Transfer[] = settlementLocked
+    ? payments.filter((payment) => payment.status !== "superseded")
+    : transfers;
   const personalTotals = transferTotalsForMember(
     settlementRows,
     selectedSettlementPerson,
@@ -893,6 +1002,78 @@ export default function Ledger({ secret }: { secret: string }) {
                       </p>
                     </div>
                   )}
+                  <SupplementalBills
+                    bills={supplementalBills}
+                    members={book.members}
+                    expenses={expenses}
+                    actor={actor}
+                    busy={busy}
+                    onCreate={() => setDialog({ kind: "supplement-form" })}
+                    onEdit={(bill) =>
+                      setDialog({ kind: "supplement-form", bill })
+                    }
+                    onConfirm={(bill) => {
+                      setSupplementReason("");
+                      setDialog({
+                        kind: "supplement-action",
+                        bill,
+                        action: "confirm",
+                      });
+                    }}
+                    onProblem={(bill) => {
+                      setSupplementReason("");
+                      setDialog({
+                        kind: "supplement-action",
+                        bill,
+                        action: "dispute",
+                      });
+                    }}
+                    onReject={(bill) => {
+                      setSupplementReason("");
+                      setDialog({
+                        kind: "supplement-action",
+                        bill,
+                        action: "reject",
+                      });
+                    }}
+                    onWithdraw={(bill) =>
+                      setDialog({
+                        kind: "supplement-action",
+                        bill,
+                        action: "withdraw",
+                      })
+                    }
+                    onSettle={(bill) =>
+                      setDialog({
+                        kind: "supplement-action",
+                        bill,
+                        action: "settle",
+                      })
+                    }
+                    onCancel={(bill) =>
+                      setDialog({
+                        kind: "supplement-action",
+                        bill,
+                        action: "cancel",
+                      })
+                    }
+                    onCopyReminder={(bill) => {
+                      const deadline = bill.version.deadline_at
+                        ? new Intl.DateTimeFormat("zh-TW", {
+                            timeZone: "Asia/Taipei",
+                            dateStyle: "medium",
+                            timeStyle: "short",
+                          }).format(new Date(bill.version.deadline_at))
+                        : "尚未開始";
+                      void copyText(
+                        `【${event.name}】補充／修正帳單 #${bill.bill_number}\n${bill.version.proposal.name}\n截止：${deadline}\n請開啟共同帳本核對：${window.location.href}`,
+                      )
+                        .then(() => setNotice("已複製補充帳單提醒"))
+                        .catch(() =>
+                          setError("無法複製提醒，請確認瀏覽器權限。"),
+                        );
+                    }}
+                  />
                 </section>
               )}
               {tab === "stats" && (
@@ -1267,6 +1448,27 @@ export default function Ledger({ secret }: { secret: string }) {
                       <span className={disputedCount ? "has-dispute" : ""}>
                         有異議 {disputedCount} 筆
                       </span>
+                      {pausedPayments.length > 0 && (
+                        <span className="has-dispute">
+                          修正暫停 {pausedPayments.length} 筆
+                        </span>
+                      )}
+                    </div>
+                  )}
+                  {visibleForPerson(pausedPayments).length > 0 && (
+                    <div className="paused-payment-panel" role="alert">
+                      <strong>⚠ 原付款已暫停</strong>
+                      <p>
+                        相關原帳正在修正，請先不要支付下列款項；已完成的付款紀錄不受影響。
+                      </p>
+                      {visibleForPerson(pausedPayments).map((payment) => (
+                        <div key={payment.id}>
+                          <Person member={member(payment.from_id)} small />
+                          <span>→</span>
+                          <Person member={member(payment.to_id)} small />
+                          <b>{money(payment.amount)}</b>
+                        </div>
+                      ))}
                     </div>
                   )}
                   {visibleForPerson(activePayments).length > 0 && (
@@ -1377,7 +1579,8 @@ export default function Ledger({ secret }: { secret: string }) {
                   {settlementLocked &&
                   !visibleForPerson(pendingPayments).length &&
                   !visibleForPerson(activePayments).length &&
-                  !visibleForPerson(completedPayments).length ? (
+                  !visibleForPerson(completedPayments).length &&
+                  !visibleForPerson(pausedPayments).length ? (
                     <div className="all-clear">
                       <span>🎉</span>
                       <h2>目前沒有需要結算的費用</h2>
@@ -1607,6 +1810,124 @@ export default function Ledger({ secret }: { secret: string }) {
                     </button>
                   </div>
                 )}
+                {!eventIsClosed && (openReview || settlementLocked) && (
+                  <button
+                    className="secondary full"
+                    onClick={() =>
+                      setDialog({ kind: "supplement-form", source: x })
+                    }
+                  >
+                    <FilePenLine size={16} /> 建立局部修正帳單
+                  </button>
+                )}
+              </Modal>
+            );
+          })()}
+        {dialog?.kind === "supplement-form" &&
+          event &&
+          (() => {
+            const bill = dialog.bill;
+            const source =
+              dialog.source ??
+              (bill?.source_expense_id
+                ? expenses.find((row) => row.id === bill.source_expense_id)
+                : undefined);
+            const proposal = bill?.version.proposal;
+            const initialExpense: Expense | undefined = proposal
+              ? {
+                  ...proposal,
+                  id: bill.id,
+                  event_id: event.id,
+                  deleted_at: null,
+                  created_at: bill.created_at,
+                  updated_at: bill.updated_at,
+                }
+              : source;
+            const kind = bill?.kind ?? (source ? "correction" : "expense");
+            return (
+              <ExpenseForm
+                members={book.members}
+                actor={actor}
+                event={event}
+                expense={initialExpense}
+                getRevision={() => revision.current}
+                onSave={save}
+                busy={busy}
+                onClose={() => setDialog(null)}
+                supplemental={{
+                  billId: bill?.id,
+                  kind,
+                  sourceExpenseId:
+                    source?.id ?? bill?.source_expense_id ?? undefined,
+                  initialReason: bill?.version.reason,
+                  reopenClosed: event.status === "closed",
+                  // eslint-disable-next-line react-hooks/refs -- Invoked only by the form submit event.
+                  onSave: saveSupplement,
+                }}
+              />
+            );
+          })()}
+        {dialog?.kind === "supplement-action" &&
+          event &&
+          (() => {
+            const bill = dialog.bill;
+            const needsReason = ["dispute", "reject"].includes(dialog.action);
+            const titles = {
+              confirm: "確認這版帳單正確？",
+              dispute: "回報帳單問題",
+              reject: "明確拒絕這版帳單？",
+              withdraw: "撤回我的問題？",
+              settle: "完成這張補充結算？",
+              cancel: "取消這張補充帳單？",
+            } as const;
+            return (
+              <Modal
+                title={titles[dialog.action]}
+                onClose={() => setDialog(null)}
+              >
+                <p>
+                  目前以 {member(actor).icon} {member(actor).name} 身分操作第{" "}
+                  {bill.bill_number} 號帳單。
+                </p>
+                {dialog.action === "settle" && (
+                  <p>
+                    這只會建立本張帳單的差額付款，不會重新安排主帳或其他補充帳單。
+                  </p>
+                )}
+                {dialog.action === "cancel" && (
+                  <p>取消只影響這張帳單；主帳與其他補充帳單維持不變。</p>
+                )}
+                {needsReason && (
+                  <label>
+                    原因
+                    <textarea
+                      required
+                      maxLength={300}
+                      value={supplementReason}
+                      onChange={(e) => setSupplementReason(e.target.value)}
+                      placeholder="請簡短說明需要核對或拒絕的內容"
+                    />
+                  </label>
+                )}
+                <div className="two-col">
+                  <button className="secondary" onClick={() => setDialog(null)}>
+                    返回
+                  </button>
+                  <button
+                    className={
+                      needsReason || dialog.action === "cancel"
+                        ? "danger-button"
+                        : "primary"
+                    }
+                    disabled={busy || (needsReason && !supplementReason.trim())}
+                    onClick={() => {
+                      // eslint-disable-next-line react-hooks/refs -- Invoked only by the click event.
+                      void runSupplementAction(bill, dialog.action, event);
+                    }}
+                  >
+                    {busy ? "處理中…" : "確認"}
+                  </button>
+                </div>
               </Modal>
             );
           })()}

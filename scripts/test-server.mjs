@@ -169,6 +169,47 @@ const server = createServer(async (req, res) => {
         p.p_round,
       ]);
       res.end("null");
+    } else if (req.url === "/rest/v1/rpc/save_supplemental_bill") {
+      const result = await db.query(
+        "select public.save_supplemental_bill($1,$2,$3,$4,$5) result",
+        [
+          p.p_secret,
+          p.p_revision,
+          p.p_actor,
+          JSON.stringify(p.p_data),
+          p.p_submit,
+        ],
+      );
+      res.end(JSON.stringify(result.rows[0].result));
+    } else if (req.url === "/rest/v1/rpc/transition_supplemental_bill") {
+      await db.query(
+        "select public.transition_supplemental_bill($1,$2,$3,$4,$5,$6,$7)",
+        [
+          p.p_secret,
+          p.p_actor,
+          p.p_event,
+          p.p_bill,
+          p.p_version,
+          p.p_action,
+          p.p_reason,
+        ],
+      );
+      res.end("null");
+    } else if (req.url === "/rest/v1/rpc/cancel_supplemental_bill") {
+      await db.query("select public.cancel_supplemental_bill($1,$2,$3,$4,$5)", [
+        p.p_secret,
+        p.p_revision,
+        p.p_actor,
+        p.p_event,
+        p.p_bill,
+      ]);
+      res.end("null");
+    } else if (req.url === "/rest/v1/rpc/settle_supplemental_bill") {
+      const result = await db.query(
+        "select public.settle_supplemental_bill($1,$2,$3,$4,$5,$6) result",
+        [p.p_secret, p.p_revision, p.p_actor, p.p_event, p.p_bill, p.p_version],
+      );
+      res.end(JSON.stringify(result.rows[0].result));
     } else if (req.url === "/rest/v1/rpc/cancel_settlement") {
       await db.query("select public.cancel_settlement($1,$2,$3,$4)", [
         p.p_secret,

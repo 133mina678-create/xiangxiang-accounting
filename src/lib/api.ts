@@ -159,6 +159,86 @@ export async function cancelSettlementReview(
   if (error) throwRpcError(error.message);
 }
 
+export async function saveSupplementalBill(
+  secret: string,
+  revision: number,
+  actor: string,
+  payload: unknown,
+  submit: boolean,
+) {
+  if (!client) throw new Error("尚未連接雲端帳本");
+  const { data, error } = await client.rpc("save_supplemental_bill", {
+    p_secret: secret,
+    p_revision: revision,
+    p_actor: actor,
+    p_data: payload,
+    p_submit: submit,
+  });
+  if (error) throwRpcError(error.message);
+  return data as string;
+}
+
+export async function transitionSupplementalBill(
+  secret: string,
+  actor: string,
+  eventId: string,
+  billId: string,
+  versionId: string,
+  action: "confirm" | "dispute" | "reject" | "withdraw",
+  reason?: string,
+) {
+  if (!client) throw new Error("尚未連接雲端帳本");
+  const { error } = await client.rpc("transition_supplemental_bill", {
+    p_secret: secret,
+    p_actor: actor,
+    p_event: eventId,
+    p_bill: billId,
+    p_version: versionId,
+    p_action: action,
+    p_reason: reason ?? null,
+  });
+  if (error) throwRpcError(error.message);
+}
+
+export async function cancelSupplementalBill(
+  secret: string,
+  revision: number,
+  actor: string,
+  eventId: string,
+  billId: string,
+) {
+  if (!client) throw new Error("尚未連接雲端帳本");
+  const { error } = await client.rpc("cancel_supplemental_bill", {
+    p_secret: secret,
+    p_revision: revision,
+    p_actor: actor,
+    p_event: eventId,
+    p_bill: billId,
+  });
+  if (error) throwRpcError(error.message);
+}
+
+export async function settleSupplementalBill(
+  secret: string,
+  revision: number,
+  actor: string,
+  eventId: string,
+  billId: string,
+  versionId: string,
+) {
+  if (!client) throw new Error("尚未連接雲端帳本");
+  const { data, error } = await client.rpc("settle_supplemental_bill", {
+    p_secret: secret,
+    p_revision: revision,
+    p_actor: actor,
+    p_event: eventId,
+    p_bill: billId,
+    p_version: versionId,
+  });
+  if (error) throwRpcError(error.message);
+  return data as string | null;
+}
+
 async function parseResponse(response: Response) {
   const body = (await response.json().catch(() => ({}))) as { error?: string };
   if (!response.ok) throw new Error(body.error || "操作未完成，請稍後再試。");

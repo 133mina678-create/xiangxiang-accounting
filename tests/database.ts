@@ -224,6 +224,77 @@ export async function cancelSettlement(
     input.eventId,
   ]);
 }
+export async function saveSupplement(
+  db: PGlite,
+  input: {
+    secret: string;
+    revision: number;
+    actor: string;
+    data: unknown;
+    submit: boolean;
+  },
+) {
+  const result = await db.query<{ id: string }>(
+    "select public.save_supplemental_bill($1,$2,$3,$4,$5) id",
+    [
+      input.secret,
+      input.revision,
+      input.actor,
+      JSON.stringify(input.data),
+      input.submit,
+    ],
+  );
+  return result.rows[0].id;
+}
+export async function transitionSupplement(
+  db: PGlite,
+  input: {
+    secret: string;
+    actor: string;
+    eventId: string;
+    billId: string;
+    versionId: string;
+    action: "confirm" | "dispute" | "reject" | "withdraw";
+    reason?: string;
+  },
+) {
+  await db.query(
+    "select public.transition_supplemental_bill($1,$2,$3,$4,$5,$6,$7)",
+    [
+      input.secret,
+      input.actor,
+      input.eventId,
+      input.billId,
+      input.versionId,
+      input.action,
+      input.reason ?? null,
+    ],
+  );
+}
+export async function settleSupplement(
+  db: PGlite,
+  input: {
+    secret: string;
+    revision: number;
+    actor: string;
+    eventId: string;
+    billId: string;
+    versionId: string;
+  },
+) {
+  const result = await db.query<{ id: string | null }>(
+    "select public.settle_supplemental_bill($1,$2,$3,$4,$5,$6) id",
+    [
+      input.secret,
+      input.revision,
+      input.actor,
+      input.eventId,
+      input.billId,
+      input.versionId,
+    ],
+  );
+  return result.rows[0].id;
+}
 export async function transition(
   db: PGlite,
   input: {

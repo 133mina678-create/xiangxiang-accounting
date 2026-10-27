@@ -2698,3 +2698,79 @@ body:has(dialog[open]) {
     width: 100%;
   }
 }
+
+.supplement-section {
+  margin-top: 2rem;
+  padding-top: 1.4rem;
+  border-top: 1px dashed var(--border);
+}
+.supplement-heading {
+  align-items: flex-end;
+  gap: 1rem;
+}
+.supplement-heading p { margin: 0.2rem 0; }
+.my-task-banner,
+.paused-payment-panel {
+  margin: 0.8rem 0;
+  padding: 0.8rem 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--primary) 10%, var(--surface));
+}
+.my-task-banner { display: flex; align-items: center; gap: 0.55rem; }
+.supplement-list { display: grid; gap: 0.9rem; }
+.supplement-card {
+  min-width: 0;
+  padding: 1rem;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: var(--surface);
+  box-shadow: var(--shadow-soft);
+}
+.supplement-card > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.supplement-card h3 { margin: 0.4rem 0 0.18rem; overflow-wrap: anywhere; }
+.supplement-card header p,
+.supplement-reason { margin: 0; color: var(--text-secondary); overflow-wrap: anywhere; }
+.supplement-card header > strong { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.status-pill { display: inline-flex; padding: 0.25rem 0.58rem; border-radius: 999px; font-size: 0.78rem; font-weight: 750; }
+.supplement-draft { background: var(--surface-secondary); }
+.supplement-reviewing { background: #f8e7d2; color: #7c532f; }
+.supplement-settled { background: color-mix(in srgb, var(--success) 18%, var(--surface)); color: #3f6740; }
+.supplement-canceled { background: color-mix(in srgb, var(--danger) 10%, var(--surface)); color: var(--danger); }
+.supplement-reason { margin-top: 0.8rem; }
+.affected-people { margin-top: 0.85rem; padding: 0.75rem; border-radius: 14px; background: var(--surface-secondary); }
+.affected-people > div { display: flex; flex-wrap: wrap; gap: 0.55rem; margin: 0.55rem 0; }
+.affected-people small { color: var(--text-secondary); }
+.delta-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 185px), 1fr)); gap: 0.55rem; margin-top: 0.8rem; }
+.delta-grid > div { min-width: 0; display: grid; gap: 0.24rem; padding: 0.7rem; border: 1px solid var(--border); border-radius: 13px; }
+.delta-grid span { color: var(--text-secondary); font-size: 0.83rem; }
+.supplement-deadline { display: flex; align-items: center; gap: 0.45rem; margin-top: 0.8rem; font-weight: 700; }
+.participant-statuses { display: flex; flex-wrap: wrap; gap: 0.42rem; margin-top: 0.65rem; }
+.participant-statuses span { padding: 0.3rem 0.5rem; border-radius: 999px; background: var(--surface-secondary); font-size: 0.8rem; }
+.participant-statuses .disputed,
+.participant-statuses .rejected { color: var(--danger); }
+.supplement-actions,
+.supplement-form-actions { display: flex; flex-wrap: wrap; gap: 0.55rem; margin-top: 0.85rem; }
+.supplement-actions button,
+.supplement-form-actions button { min-height: 44px; }
+.supplement-explainer { padding: 0.8rem; border-radius: 14px; background: var(--surface-secondary); }
+.supplement-explainer p { margin: 0.35rem 0 0; }
+.confirm-check { display: flex; align-items: flex-start; gap: 0.55rem; }
+.confirm-check input { width: 1.1rem; height: 1.1rem; flex: 0 0 auto; }
+.paused-payment-panel { border-color: color-mix(in srgb, var(--danger) 35%, var(--border)); }
+.paused-payment-panel > div { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; padding-top: 0.5rem; }
+.paused-payment-panel p { margin: 0.35rem 0; }
+
+@media (max-width: 520px) {
+  .supplement-heading,
+  .supplement-card > header { align-items: stretch; flex-direction: column; }
+  .supplement-heading > button,
+  .supplement-actions button,
+  .supplement-form-actions button { width: 100%; }
+  .supplement-card header > strong { font-size: 1.1rem; }
+}

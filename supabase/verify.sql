@@ -1,7 +1,7 @@
 -- Read-only checks. Run in SQL Editor; every passed column should be true.
 -- Does not display workspace identifiers, book secrets or user data.
-select '14 internal tables exist with RLS' as check_name,
- (select count(*)=14 and bool_and(c.relrowsecurity)
+select '18 internal tables exist with RLS' as check_name,
+ (select count(*)=18 and bool_and(c.relrowsecurity)
   from pg_class c join pg_namespace n on n.oid=c.relnamespace
   where n.nspname='ledger' and c.relkind='r') as passed
 union all
@@ -65,6 +65,18 @@ select 'pre-settlement review RPCs and database locks are active',
   'expense_discounts_review_lock','events_review_lock'
  ) and not tgisinternal)=5
  and not has_function_privilege('anon',to_regprocedure('public.start_settlement_v1(text,integer,uuid,uuid,jsonb)'),'EXECUTE')
+union all
+select 'supplemental bill RPCs are scoped and definer-secured',
+ (select count(*)=4 and bool_and(
+   p.prosecdef and p.proconfig @> array['search_path=""']
+   and has_function_privilege('anon',p.oid,'EXECUTE')
+  ) from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+  where n.nspname='public' and p.proname in (
+   'save_supplemental_bill','transition_supplemental_bill',
+   'cancel_supplemental_bill','settle_supplemental_bill'
+  ))
+ and not has_table_privilege('anon','ledger.supplemental_bills','SELECT')
+ and not has_table_privilege('authenticated','ledger.supplemental_bill_versions','SELECT')
 union all
 select 'transfer proof RPCs are server-only',
  (select count(*)=8 and bool_and(

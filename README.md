@@ -15,7 +15,7 @@
 
 ## 已實作功能
 
-活動建立／編輯／唯讀封存、固定六人身份選擇、活動專屬臨時成員、跨日帳目、日期／付款人／分類篩選、獨立的消費名稱與選填備註、消費新增／詳情／修改／軟刪除、12 秒 Undo、永久保留的回收區、平均／自訂／份數分攤、尾差輪替、每日與活動統計、結算前 48 小時個人明細確認、正式結算快照與帳目鎖定、全部／個人結算檢視、最少筆數結算、收款銀行末四碼與一鍵複製、一次完整付款、轉帳證明預覽／壓縮／私密上傳、收款確認／異議／撤回／重新上傳、72 小時自動確認、CSV 匯出、最近 100 筆修改紀錄。
+活動建立／編輯／唯讀封存、固定六人身份選擇、活動專屬臨時成員、跨日帳目、日期／付款人／分類篩選、獨立的消費名稱與選填備註、消費新增／詳情／修改／軟刪除、12 秒 Undo、永久保留的回收區、平均／自訂／份數分攤、尾差輪替、每日與活動統計、結算前 48 小時個人明細確認、相關成員限定的補充／修正帳單、正式結算快照與帳目鎖定、全部／個人結算檢視、最少筆數結算、收款銀行末四碼與一鍵複製、一次完整付款、轉帳證明預覽／壓縮／私密上傳、收款確認／異議／撤回／重新上傳、72 小時自動確認、CSV 匯出、最近 100 筆修改紀錄。
 
 結束日期可省略；未設定時允許開始日期以後的任意日期。日期預設今天，但今天若超過活動範圍則移到最近的合法日期。使用者完成固定成員間的結算後可「結束活動」；結束後由資料庫強制唯讀，仍可查看與匯出。每筆消費的付款人可不參與分攤。
 
@@ -97,7 +97,7 @@ PowerShell 複製環境檔：`Copy-Item .env.example .env.local`。開啟 `http:
 
 ## 資料一致性與同步
 
-正規化資料表：`workspaces`、`members`、`events`、`event_members`、`expenses`、`expense_splits`、`settlement_snapshots`、`settlements`、`activity_logs`、`proof_cleanup_queue`。消費主標題存放在 `expenses.name`，補充備註存放在 `expenses.note`，兩者不互相 fallback。臨時成員也是獨立的 `members.id`，以 `member_type='guest'` 與 `guest_event_id` 限定在單一活動；同名臨時成員在不同活動仍是不同 UUID。可選的銀行代碼、銀行名稱、銀行帳號存放在 `members.bank_code/bank_name/bank_account`；三者皆為 `text`，未提供時皆為 `null`，可保留前導零。
+正規化資料表：`workspaces`、`members`、`events`、`event_members`、`expenses`、`expense_splits`、`settlement_snapshots`、`settlements`、`supplemental_bills`、`supplemental_bill_versions`、`supplemental_bill_participants`、`supplemental_bill_disputes`、`activity_logs`、`proof_cleanup_queue`。消費主標題存放在 `expenses.name`，補充備註存放在 `expenses.note`，兩者不互相 fallback。臨時成員也是獨立的 `members.id`，以 `member_type='guest'` 與 `guest_event_id` 限定在單一活動；同名臨時成員在不同活動仍是不同 UUID。可選的銀行代碼、銀行名稱、銀行帳號存放在 `members.bank_code/bank_name/bank_account`；三者皆為 `text`，未提供時皆為 `null`，可保留前導零。
 
 所有金額為整數新台幣元。一筆消費上限 NT$100,000,000、必須大於 0；自訂個別分攤可為 0，份數為 1～10,000。前端使用安全整數與 BigInt 比例運算，SQL 使用 integer／bigint。
 
@@ -139,9 +139,15 @@ PowerShell 複製環境檔：`Copy-Item .env.example .env.local`。開啟 `http:
 
 `paid_at + 72 hours` 是唯一自動確認期限。Supabase Cron 依 `0 * * * *` 每小時透過 `pg_net` 呼叫受 Bearer secret 保護的伺服器端點；URL 與 secret 加密存放在 Supabase Vault。資料庫函式只更新仍為 `awaiting_confirmation` 的到期 row，因此可重複執行。確認時先清空 proof path 並寫入清理佇列，再嘗試刪除 Storage object；失敗會保留在 queue，由後續排程重試。重新上傳、刪除 settlement 或硬刪除活動也使用同一清理機制。
 
-正式結算後，資料庫 trigger 會拒絕消費、分攤、活動成員與正式交易金額的修改／刪除，不只依賴前端隱藏按鈕。漏記費用的安全延伸方案是建立 append-only 的「補充結算批次」，只針對新增費用產生新快照及新交易，絕不改寫舊批次；本版先鎖定既有正式結算，尚未開放補充批次 UI。
+正式結算後，資料庫 trigger 會拒絕消費、分攤、活動成員與正式交易金額的修改／刪除，不只依賴前端隱藏按鈕。漏記費用使用 append-only 的「補充結算批次」；原帳錯誤使用關聯原消費及版本的「修正帳單」。每張帳單只固定真正受影響的固定成員名單並使用獨立 48 小時期限；臨時成員金額仍完整納入，但不建立無法完成的確認待辦。主帳已鎖定時，修正會保留原快照與已完成付款，並只建立可追溯的差額批次，不會重新最佳化其他人的付款。
 
-核對功能的 migration、發布順序與安全回復方式見 [結算前個人明細確認操作文件](docs/PRE_SETTLEMENT_REVIEW.md)。
+### 補充／修正帳單
+
+在活動「帳目」頁底部選擇「新增補充費用」，或從已鎖定消費詳情選擇「建立局部修正帳單」。草稿不影響正式餘額，也不開始倒數；正式送出後才由資料庫時間開始該張帳單專屬的 48 小時。所有真正受影響的固定成員確認且無異議可提前手動結算；期限到達後仍須手動結算，未回覆者不會被寫成已確認。異議或明確拒絕在提出者撤回／接受新版前持續阻擋。
+
+獨立補記不阻擋正確的主帳結算。主帳尚未鎖定的修正會只更新原消費有效版本、主帳核對快照及受影響成員的確認狀態；無關成員的確認與期限不變。主帳已鎖定的修正不覆寫歷史，會暫停可能受影響且尚未付款的主帳交易，核對完成後以守恆差額建立新的補充快照與付款來源。已有付款證明或異議時，資料庫會要求先走原付款流程，避免以修正帳單直接取消款項。
+
+核對功能的 migration、發布順序與安全回復方式見 [結算前個人明細確認操作文件](docs/PRE_SETTLEMENT_REVIEW.md) 與 [補充／修正帳單操作文件](docs/SUPPLEMENTAL_BILLS.md)。
 
 ### Demo 預期結果
 

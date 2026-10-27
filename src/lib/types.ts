@@ -56,6 +56,8 @@ export type Transfer = { from_id: string; to_id: string; amount: number };
 export type SettlementStatus =
   | "record_only"
   | "pending_payment"
+  | "paused"
+  | "superseded"
   | "awaiting_confirmation"
   | "disputed"
   | "confirmed"
@@ -65,6 +67,8 @@ export type Payment = Transfer & {
   id: string;
   event_id: string;
   snapshot_id?: string | null;
+  source_kind?: "main" | "supplemental" | null;
+  supplemental_bill_id?: string | null;
   status: SettlementStatus;
   paid_at: string | null;
   confirmed_at: string | null;
@@ -72,6 +76,67 @@ export type Payment = Transfer & {
   confirmation_method: ConfirmationMethod;
   updated_at: string;
   created_at: string;
+};
+export type SupplementalDelta = {
+  member_id: string;
+  paid_delta: number;
+  share_delta: number;
+};
+export type SupplementalParticipant = {
+  member_id: string;
+  status: "pending" | "confirmed" | "disputed" | "rejected";
+  confirmed_at: string | null;
+};
+export type SupplementalDispute = {
+  id: string;
+  version_id: string;
+  member_id: string;
+  kind: "dispute" | "reject";
+  reason: string;
+  created_at: string;
+  resolved_at: string | null;
+  resolution: "withdrawn" | "accepted_revision" | null;
+};
+export type SupplementalVersion = {
+  id: string;
+  version: number;
+  status: "draft" | "reviewing" | "approved" | "replaced" | "canceled";
+  reason: string;
+  base_snapshot: Omit<
+    Expense,
+    "id" | "event_id" | "deleted_at" | "created_at" | "updated_at"
+  > | null;
+  proposal: Omit<
+    Expense,
+    "id" | "event_id" | "deleted_at" | "created_at" | "updated_at"
+  >;
+  delta_snapshot: SupplementalDelta[];
+  created_by: string;
+  created_at: string;
+  started_at: string | null;
+  deadline_at: string | null;
+  deadline_reached: boolean;
+  can_settle: boolean;
+  approved_at: string | null;
+  participants: SupplementalParticipant[];
+  disputes: SupplementalDispute[];
+};
+export type SupplementalBill = {
+  id: string;
+  event_id: string;
+  bill_number: number;
+  kind: "expense" | "correction";
+  source_expense_id: string | null;
+  status: "draft" | "reviewing" | "settled" | "canceled";
+  current_version: number;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+  settled_at: string | null;
+  canceled_at: string | null;
+  settled_snapshot_id: string | null;
+  reopened_closed_event: boolean;
+  version: SupplementalVersion;
 };
 export type SettlementReviewParticipant = {
   member_id: string;
@@ -117,6 +182,7 @@ export type Book = {
   expenses: Expense[];
   payments: Payment[];
   reviews: SettlementReview[];
+  supplemental_bills: SupplementalBill[];
   logs: Log[];
 };
 export const categories = [

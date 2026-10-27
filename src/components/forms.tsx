@@ -306,6 +306,7 @@ export function ExpenseForm({
   busy,
   getRevision,
   settlementWarning = false,
+  supplemental,
 }: {
   members: Member[];
   event: Event;
@@ -316,9 +317,24 @@ export function ExpenseForm({
   busy: boolean;
   getRevision: () => number;
   settlementWarning?: boolean;
+  supplemental?: {
+    billId?: string;
+    kind: "expense" | "correction";
+    sourceExpenseId?: string;
+    initialReason?: string;
+    reopenClosed?: boolean;
+    onSave: (
+      payload: Record<string, unknown>,
+      submit: boolean,
+      expected: number,
+    ) => Promise<boolean>;
+  };
 }) {
   const [expected, setExpected] = useState(getRevision);
   const [expenseUuid] = useState(() => expense?.id ?? crypto.randomUUID());
+  const [billUuid] = useState(
+    () => supplemental?.billId ?? crypto.randomUUID(),
+  );
   const active = members.filter((m) => event.members.includes(m.id));
   const hasDiscount = Boolean(
     expense?.splits.some((split) => split.gross_amount != null),
@@ -392,6 +408,10 @@ export function ExpenseForm({
       : "",
   );
   const [error, setError] = useState("");
+  const [supplementalReason, setSupplementalReason] = useState(
+    supplemental?.initialReason ?? "",
+  );
+  const [actorConfirm, setActorConfirm] = useState(true);
   const ordered = active
     .filter((m) => selected.includes(m.id))
     .map((m) => m.id);
@@ -446,7 +466,18 @@ export function ExpenseForm({
   );
   const defaultDate = [today(), event.start_date].sort().at(-1)!;
   return (
-    <Modal title={expense ? "修改這筆消費" : "記下一筆消費"} onClose={onClose}>
+    <Modal
+      title={
+        supplemental?.kind === "correction"
+          ? "建立修正帳單"
+          : supplemental
+            ? "新增補充費用"
+            : expense
+              ? "修改這筆消費"
+              : "記下一筆消費"
+      }
+      onClose={onClose}
+    >
       {expense && settlementWarning && (
         <p className="settlement-warning" role="note">
           此活動已有付款進行中或已完成的交易。修改消費不會覆蓋既有轉帳；如有差額，結算頁會另外列出調整轉帳。
@@ -460,30 +491,69 @@ export function ExpenseForm({
             return;
           }
           const f = new FormData(e.currentTarget);
-          if (
-            await onSave(
-              isDiscountMethod ? "expense.discount.save" : "expense.save",
-              {
-                id: expenseUuid,
-                event_id: event.id,
-                name: f.get("name"),
-                date: f.get("date"),
-                amount: integer(checkoutAmount, 1),
-                payer_id: payer,
-                category,
-                note: f.get("note"),
-                mode: isDiscountMethod ? "custom" : method,
-                discount_method:
-                  method === "shared-discount" ? "shared" : "manual",
-                splits: preview,
-              },
-              expected,
-            )
-          )
-            onClose();
+          const proposal = {
+            name: f.get("name"),
+            date: f.get("date"),
+            amount: integer(checkoutAmount, 1),
+            payer_id: payer,
+            category,
+            note: f.get("note"),
+            mode: isDiscountMethod ? "custom" : method,
+            discount_method: method === "shared-discount" ? "shared" : "manual",
+            splits: preview,
+          };
+          const submitter = (e.nativeEvent as SubmitEvent)
+            .submitter as HTMLButtonElement | null;
+          const saved = supplemental
+            ? await supplemental.onSave(
+                {
+                  id: billUuid,
+                  event_id: event.id,
+                  kind: supplemental.kind,
+                  source_expense_id: supplemental.sourceExpenseId ?? null,
+                  reason: supplementalReason,
+                  actor_confirm: actorConfirm,
+                  reopen_closed: supplemental.reopenClosed ?? false,
+                  proposal,
+                },
+                submitter?.value === "submit",
+                expected,
+              )
+            : await onSave(
+                isDiscountMethod ? "expense.discount.save" : "expense.save",
+                { id: expenseUuid, event_id: event.id, ...proposal },
+                expected,
+              );
+          if (saved) onClose();
           else setExpected(getRevision());
         }}
       >
+        {supplemental && (
+          <>
+            <div className="supplement-explainer" role="note">
+              <strong>
+                {supplemental.kind === "correction"
+                  ? "只記錄修改前後的差額"
+                  : "獨立於原活動主帳單"}
+              </strong>
+              <p>
+                只有實際受影響的固定成員需要確認；草稿不計時、不產生付款，正式送出才開始
+                48 小時。
+              </p>
+            </div>
+            <label>
+              補充／修正原因
+              <textarea
+                aria-label="補充／修正原因"
+                required
+                maxLength={300}
+                value={supplementalReason}
+                onChange={(event) => setSupplementalReason(event.target.value)}
+                placeholder="例如：漏記點心，或原分攤金額需要修正"
+              />
+            </label>
+          </>
+        )}
         <label>
           消費名稱
           <input
@@ -813,9 +883,47 @@ export function ExpenseForm({
             {error}
           </p>
         )}
-        <button className="primary full" disabled={busy || Boolean(validation)}>
-          {busy ? "儲存中…" : expense ? "儲存修改" : "儲存消費"}
-        </button>
+        {supplemental && (
+          <label className="confirm-check">
+            <input
+              type="checkbox"
+              checked={actorConfirm}
+              onChange={(event) => setActorConfirm(event.target.checked)}
+            />
+            我已核對完整內容；若我是必要對象，送出時同時確認本版。
+          </label>
+        )}
+        {supplemental ? (
+          <div className="supplement-form-actions">
+            <button
+              type="submit"
+              name="intent"
+              value="draft"
+              className="secondary"
+              disabled={busy || Boolean(validation)}
+            >
+              儲存草稿
+            </button>
+            <button
+              type="submit"
+              name="intent"
+              value="submit"
+              className="primary"
+              disabled={
+                busy || Boolean(validation) || !supplementalReason.trim()
+              }
+            >
+              {busy ? "送出中…" : "正式送出並開始 48 小時"}
+            </button>
+          </div>
+        ) : (
+          <button
+            className="primary full"
+            disabled={busy || Boolean(validation)}
+          >
+            {busy ? "儲存中…" : expense ? "儲存修改" : "儲存消費"}
+          </button>
+        )}
       </form>
     </Modal>
   );
