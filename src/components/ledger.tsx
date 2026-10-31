@@ -64,6 +64,7 @@ import {
   TransferProofViewer,
 } from "./transfer-proof-dialog";
 import { reviewEligibility } from "@/lib/settlement-review";
+import { eventsVisibleToMember } from "@/lib/event-visibility";
 import { SettlementReviewPanel } from "./settlement-review";
 import { SupplementalBills } from "./supplemental-bills";
 
@@ -393,7 +394,18 @@ export default function Ledger({ secret }: { secret: string }) {
   const fixedMembers = book.members.filter(
     (candidate) => candidate.member_type !== "guest",
   );
-  const event = book.events.find((e) => e.id === eventId && !e.deleted_at);
+  const visibleEvents = eventsVisibleToMember(book.events, actor);
+  const visibleEventIds = new Set(
+    visibleEvents.map((candidate) => candidate.id),
+  );
+  const visibleLogs = book.logs.filter(
+    (log) => log.event_id === null || visibleEventIds.has(log.event_id),
+  );
+  const visibleDeletedExpenses = book.expenses.filter(
+    (expense) =>
+      Boolean(expense.deleted_at) && visibleEventIds.has(expense.event_id),
+  );
+  const event = visibleEvents.find((e) => e.id === eventId && !e.deleted_at);
   const eventIsClosed = event?.status === "closed";
   const settlementLocked = event?.settlement_state === "locked";
   const eventReviews = (book.reviews ?? []).filter(
@@ -581,7 +593,7 @@ export default function Ledger({ secret }: { secret: string }) {
   };
   const deletedEvents = book.deleted_events ?? [];
   const cards = (past: boolean) =>
-    book.events
+    visibleEvents
       .filter((e) => !e.deleted_at && (e.status === "closed") === past)
       .map((e) => {
         const es = book.expenses.filter(
@@ -701,7 +713,7 @@ export default function Ledger({ secret }: { secret: string }) {
                   進行中的活動{" "}
                   <span>
                     {
-                      book.events.filter(
+                      visibleEvents.filter(
                         (e) => !e.deleted_at && e.status === "active",
                       ).length
                     }
@@ -710,13 +722,13 @@ export default function Ledger({ secret }: { secret: string }) {
                 <span className="muted">下一段回憶，從這裡開始</span>
               </div>
               <div className="event-grid">{cards(false)}</div>
-              {!book.events.some(
+              {!visibleEvents.some(
                 (e) => !e.deleted_at && e.status === "active",
               ) && (
                 <div className="empty">
                   <BookOpen />
-                  <h3>還沒有進行中的活動</h3>
-                  <p>聚餐也好，旅行也好，先幫這次相聚取個名字。</p>
+                  <h3>你目前沒有進行中的活動</h3>
+                  <p>只有你有參加的活動會顯示在這裡。</p>
                   <button
                     className="secondary"
                     onClick={() => setDialog({ kind: "event" })}
@@ -730,7 +742,7 @@ export default function Ledger({ secret }: { secret: string }) {
                 <span className="muted">花費有記錄，回憶也在</span>
               </div>
               <div className="event-grid">{cards(true)}</div>
-              {!book.events.some(
+              {!visibleEvents.some(
                 (e) => !e.deleted_at && e.status === "closed",
               ) && (
                 <p className="muted">結束的活動可以收進這裡，隨時回來看看。</p>
@@ -2550,8 +2562,8 @@ export default function Ledger({ secret }: { secret: string }) {
             )}
             <h3 className="subheading">最近的修改紀錄</h3>
             <div className="activity-list">
-              {book.logs.length ? (
-                book.logs.map((l) => (
+              {visibleLogs.length ? (
+                visibleLogs.map((l) => (
                   <p key={l.id}>
                     <b>
                       {member(l.actor_id).icon} {member(l.actor_id).name}
@@ -2568,8 +2580,7 @@ export default function Ledger({ secret }: { secret: string }) {
             </div>
             <h3 className="subheading">回收區</h3>
             <p className="hint">刪除的消費保留在這裡，可隨時復原。</p>
-            {book.expenses
-              .filter((e) => e.deleted_at)
+            {visibleDeletedExpenses
               .map((e) => (
                 <div className="trash-row" key={e.id}>
                   <span>
