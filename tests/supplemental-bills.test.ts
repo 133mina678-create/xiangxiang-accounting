@@ -484,8 +484,13 @@ describe("補充／修正帳單資料庫流程", () => {
       }),
     ).rejects.toThrow("必要確認成員");
     await db.query(
-      `update ledger.supplemental_bill_versions set
-       started_at=clock_timestamp()-interval '48 hours',deadline_at=clock_timestamp()
+      `with boundary as (
+        select clock_timestamp()-interval '48 hours' started_at
+       )
+       update ledger.supplemental_bill_versions set
+       started_at=boundary.started_at,
+       deadline_at=boundary.started_at+interval '48 hours'
+       from boundary
        where id=$1`,
       [bill.version.id],
     );
